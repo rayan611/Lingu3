@@ -53,7 +53,11 @@ export async function fetchExpansion(opts: {
   if (!res.ok) {
     let detail = ''
     try {
-      detail = ((await res.json()) as { error?: string }).error ?? ''
+      // `detail` carries the upstream body when the model itself refused —
+      // which is where the useful sentence lives. A bare "401" sends you
+      // hunting; "invalid x-api-key" tells you exactly which key to replace.
+      const body = (await res.json()) as { error?: string; detail?: string }
+      detail = [body.error, body.detail].filter(Boolean).join(' — ')
     } catch {
       /* body wasn't JSON; the status is enough */
     }
