@@ -4,32 +4,58 @@ import { z } from 'zod'
 // Languages
 // ---------------------------------------------------------------------------
 
-export const LANGS = ['fa', 'en', 'sv', 'de'] as const
-export type Lang = (typeof LANGS)[number]
+/**
+ * ADDING A LANGUAGE
+ *
+ * Add one entry to LANGUAGES below and you are done. Nothing is hard-coded to
+ * three languages: the schema is per (word x language), the queue reads
+ * whatever is active, and a language with no morphology rules of its own falls
+ * back to plain entries rather than breaking.
+ *
+ * Two optional extras, worth doing for a language you will actually study:
+ *   - morphology rules in MorphologySchema below (gender, verb forms)
+ *   - display labels in src/lib/morphology.ts, so forms are labelled in that
+ *     language's own grammatical terms
+ *   - the matching block in MORPHOLOGY_RULES in api/expand.ts, so the model
+ *     knows which fields to fill
+ *
+ * Without those three, the language still works — you just get the headword,
+ * meaning and example rather than tables of forms.
+ */
+export const LANGUAGES = {
+  fa: { name: 'Persian', native: 'فارسی', bcp47: 'fa-IR', rtl: true },
+  en: { name: 'English', native: 'English', bcp47: 'en-GB', rtl: false },
+  sv: { name: 'Swedish', native: 'Svenska', bcp47: 'sv-SE', rtl: false },
+  de: { name: 'German', native: 'Deutsch', bcp47: 'de-DE', rtl: false },
+} as const satisfies Record<
+  string,
+  { name: string; native: string; bcp47: string; rtl: boolean }
+>
 
-export const LANG_NAMES: Record<Lang, string> = {
-  fa: 'Persian',
-  en: 'English',
-  sv: 'Swedish',
-  de: 'German',
-}
+export type Lang = keyof typeof LANGUAGES
 
-export const LANG_NATIVE_NAMES: Record<Lang, string> = {
-  fa: 'فارسی',
-  en: 'English',
-  sv: 'Svenska',
-  de: 'Deutsch',
-}
+export const LANGS = Object.keys(LANGUAGES) as Lang[]
+
+// Derived, so a new language cannot be half-added — one entry above and every
+// lookup below has it.
+export const LANG_NAMES = Object.fromEntries(
+  Object.entries(LANGUAGES).map(([k, v]) => [k, v.name]),
+) as Record<Lang, string>
+
+export const LANG_NATIVE_NAMES = Object.fromEntries(
+  Object.entries(LANGUAGES).map(([k, v]) => [k, v.native]),
+) as Record<Lang, string>
 
 /** BCP-47 tags, used for speech synthesis and `lang` attributes. */
-export const LANG_BCP47: Record<Lang, string> = {
-  fa: 'fa-IR',
-  en: 'en-GB',
-  sv: 'sv-SE',
-  de: 'de-DE',
-}
+export const LANG_BCP47 = Object.fromEntries(
+  Object.entries(LANGUAGES).map(([k, v]) => [k, v.bcp47]),
+) as Record<Lang, string>
 
-export const RTL_LANGS: ReadonlySet<Lang> = new Set<Lang>(['fa'])
+export const RTL_LANGS: ReadonlySet<Lang> = new Set(
+  (Object.entries(LANGUAGES) as [Lang, { rtl: boolean }][])
+    .filter(([, v]) => v.rtl)
+    .map(([k]) => k),
+)
 
 // ---------------------------------------------------------------------------
 // Parts of speech and categories
@@ -274,7 +300,7 @@ export const DEFAULT_SETTINGS: Settings = {
 // ---------------------------------------------------------------------------
 
 export const ExpansionEntrySchema = z.object({
-  lang: z.enum(LANGS),
+  lang: z.enum(LANGS as [Lang, ...Lang[]]),
   headword: z.string().min(1),
   meaning: z.string().min(1),
   morphology: z.unknown().optional(),

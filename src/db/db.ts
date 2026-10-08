@@ -45,6 +45,15 @@ export class LinguaDB extends Dexie {
       settings: 'id',
       meta: 'key',
     })
+
+    // v2: `createdAt` on concepts. Both word lists sort by it, and IndexedDB
+    // refuses to sort on a key it has no index for — so every screen that
+    // listed words threw. Dexie migrates existing databases in place; no data
+    // is touched, only the index is added.
+    this.version(2).stores({
+      concepts:
+        'id, lemma, sourceLang, pos, category, createdAt, updatedAt, deletedAt',
+    })
   }
 }
 
