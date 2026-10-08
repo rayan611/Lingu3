@@ -24,7 +24,15 @@ export function AddWord({ settings }: Props) {
   const [status, setStatus] = useState<{ kind: string; text: string } | null>(null)
   const [lastId, setLastId] = useState<string | null>(null)
 
-  const pendingCount = useLiveQuery(() => db.pending.count(), [], 0)
+  const pending = useLiveQuery(
+    () => db.pending.orderBy('createdAt').toArray(),
+    [],
+    [],
+  )
+  const pendingCount = pending.length
+  // The reason the last expansion failed. It was always recorded; it just had
+  // nowhere to be seen, which meant a broken endpoint looked like a broken app.
+  const lastError = pending[pending.length - 1]?.lastError
   const recent = useLiveQuery(
     () => db.concepts.orderBy('createdAt').reverse().limit(6).toArray(),
     [],
@@ -145,14 +153,28 @@ export function AddWord({ settings }: Props) {
 
       {pendingCount > 0 && (
         <div className="panel warn-panel">
-          <strong>{pendingCount} word{pendingCount === 1 ? '' : 's'} waiting</strong>
+          <strong>
+            {pendingCount} word{pendingCount === 1 ? '' : 's'} waiting
+          </strong>
           <p className="muted small">
-            Saved locally but not expanded yet — they were added without a
-            connection.
+            Saved on this device, but not expanded into the other languages
+            yet. Words added offline fill in by themselves; anything else is
+            the expansion service failing, and the reason is below.
           </p>
-          <button onClick={() => void retryPending()} disabled={busy}>
-            Expand now
-          </button>
+          {lastError && <pre className="pending-detail">{lastError}</pre>}
+          <div className="row">
+            <button onClick={() => void retryPending()} disabled={busy}>
+              Expand now
+            </button>
+            {lastError && (
+              <button
+                className="link"
+                onClick={() => void navigator.clipboard?.writeText(lastError)}
+              >
+                Copy error
+              </button>
+            )}
+          </div>
         </div>
       )}
 
