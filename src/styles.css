@@ -372,3 +372,22 @@ kbd {
   .grades { grid-template-columns: repeat(2, 1fr); }
   .lang-row.native { margin: 0 -18px; }
 }
+
+/* --- sign in ------------------------------------------------------------- */
+
+.signin { max-width: 380px; margin: 8vh auto 0; }
+.signin-brand { font-size: 1.8rem; text-align: center; margin-bottom: 18px; }
+.signin-switch { margin-top: 14px; text-align: center; }
+.badge.warn-badge { background: var(--warn-soft); color: var(--warn); }
+
+.crash-detail {
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 10px;
+  border-radius: 8px;
+  max-height: 40vh;
+  overflow: auto;
+}

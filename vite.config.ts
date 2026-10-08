@@ -31,6 +31,16 @@ export default defineConfig({
         // App shell is precached, so review works with no network at all.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
+        // Without these, a bad shell cached by an older service worker (for
+        // example a login wall served while deployment protection was on)
+        // keeps being served forever and the app looks dead. These make a new
+        // deploy take over the page immediately and bin the old caches.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        // The fallback is for page navigations only; it must never swallow an
+        // API call and hand back HTML.
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             // Never cache expansion calls — they must hit the network or fail

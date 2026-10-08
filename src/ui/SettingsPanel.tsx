@@ -1,8 +1,25 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, saveSettings } from '../db/db'
 import { LANGS, LANG_NAMES, LANG_NATIVE_NAMES, type Lang, type Settings } from '../db/types'
+import { authConfigured } from '../auth/supabase'
+import { signOut } from '../auth/useSession'
+import { resetSyncCursors, type SyncResult } from '../sync/sync'
 
-export function SettingsPanel({ settings }: { settings: Settings }) {
+interface SettingsPanelProps {
+  settings: Settings
+  email: string | null
+  syncState: SyncResult | null
+  syncing: boolean
+  onSync: () => void | Promise<void>
+}
+
+export function SettingsPanel({
+  settings,
+  email,
+  syncState,
+  syncing,
+  onSync,
+}: SettingsPanelProps) {
   const cardCounts =
     useLiveQuery(async () => {
       const cards = await db.cards.toArray()
@@ -176,11 +193,51 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
         </label>
       </div>
 
+      {authConfigured && (
+        <div className="panel">
+          <h2>Account</h2>
+          <p className="muted small">Signed in as {email ?? 'unknown'}.</p>
+
+          <h3>Sync</h3>
+          <p className="muted small">
+            Your words are stored on this device and copied to your account in
+            the background. Reviewing never waits for the network.
+          </p>
+          <p className="muted small">
+            {syncing
+              ? 'Syncing now…'
+              : syncState
+                ? syncState.error
+                  ? `Last attempt failed: ${syncState.error}`
+                  : `Last synced ${new Date(syncState.at).toLocaleTimeString()} — ${syncState.pushed} up, ${syncState.pulled} down.`
+                : 'Not synced yet this session.'}
+          </p>
+          <div className="row">
+            <button onClick={() => void onSync()} disabled={syncing}>
+              Sync now
+            </button>
+            <button
+              onClick={async () => {
+                await resetSyncCursors()
+                await onSync()
+              }}
+              disabled={syncing}
+              title="Re-read everything from the server, in case something was missed"
+            >
+              Full resync
+            </button>
+            <button className="link danger" onClick={() => void signOut()}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="panel">
         <h2>Data</h2>
         <p className="muted small">
-          Everything lives in this browser. Export before clearing site data or
-          switching device — cloud sync is not built yet.
+          Export gives you a copy you control — worth doing before clearing site
+          data or changing browser.
         </p>
         <button onClick={() => void exportData()}>Export JSON</button>
       </div>

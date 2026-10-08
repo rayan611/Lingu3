@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, getSettings } from './db/db'
+import { adoptLocalData, db, getSettings, openForUser } from './db/db'
 import { queueCounts } from './fsrs/queue'
 import { processPending } from './ai/expand'
 import { LANG_NAMES, type Settings } from './db/types'
+import { authConfigured } from './auth/supabase'
+import { useSession } from './auth/useSession'
+import { SignIn } from './auth/SignIn'
+import { sync, type SyncResult } from './sync/sync'
 import { AddWord } from './ui/AddWord'
 import { Review } from './ui/Review'
 import { Browse } from './ui/Browse'
@@ -12,15 +16,63 @@ import { SettingsPanel } from './ui/SettingsPanel'
 type Tab = 'review' | 'add' | 'browse' | 'settings'
 
 export function App() {
+  const { session, userId, email } = useSession()
+  const [dbReady, setDbReady] = useState(false)
+  const [dbKey, setDbKey] = useState('local')
+
+  // Point Dexie at this user's store before rendering anything that queries it.
+  useEffect(() => {
+    if (session === undefined) return
+    let cancelled = false
+    ;(async () => {
+      await openForUser(userId)
+      if (userId) {
+        // Anything added before signing in belongs to this account now.
+        await adoptLocalData().catch(() => 0)
+      }
+      if (!cancelled) {
+        setDbKey(userId ?? 'local')
+        setDbReady(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [session, userId])
+
+  if (session === undefined) {
+    return <div className="boot">Checking your session…</div>
+  }
+
+  if (authConfigured && !session) {
+    return <SignIn />
+  }
+
+  if (!dbReady) {
+    return <div className="boot">Opening your words…</div>
+  }
+
+  return <Workspace key={dbKey} userId={userId} email={email} />
+}
+
+function Workspace({
+  userId,
+  email,
+}: {
+  userId: string | null
+  email: string | null
+}) {
   const [tab, setTab] = useState<Tab>('review')
   const [online, setOnline] = useState(navigator.onLine)
+  const [syncState, setSyncState] = useState<SyncResult | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const syncTimer = useRef<number | null>(null)
 
   const settings = useLiveQuery(() => getSettings(), [])
   const counts = useLiveQuery(
     async () => (settings ? queueCounts(settings) : null),
     [settings],
   )
-  // Re-read on card changes so the badge reflects the session as it happens.
   useLiveQuery(() => db.cards.count(), [])
 
   useEffect(() => {
@@ -34,15 +86,35 @@ export function App() {
     }
   }, [])
 
-  // Drain the pending queue whenever we have both a connection and settings.
+  const runSync = useCallback(async () => {
+    if (!userId || !navigator.onLine) return
+    setSyncing(true)
+    const result = await sync(userId)
+    setSyncState(result)
+    setSyncing(false)
+  }, [userId])
+
+  // Sync on load, when the connection returns, and every few minutes. Reviewing
+  // never waits on it — the app reads local data regardless.
+  useEffect(() => {
+    if (!userId) return
+    void runSync()
+    syncTimer.current = window.setInterval(() => void runSync(), 5 * 60_000)
+    return () => {
+      if (syncTimer.current) window.clearInterval(syncTimer.current)
+    }
+  }, [userId, runSync])
+
+  useEffect(() => {
+    if (online) void runSync()
+  }, [online, runSync])
+
   useEffect(() => {
     if (!settings || !online) return
     void processPending(settings)
   }, [settings, online])
 
-  if (!settings) {
-    return <div className="boot">Loading…</div>
-  }
+  if (!settings) return <div className="boot">Loading…</div>
 
   const due = counts?.total ?? 0
 
@@ -52,13 +124,17 @@ export function App() {
         <div className="brand">Lingua</div>
         <div className="topbar-meta">
           {!online && <span className="badge offline">offline</span>}
+          {syncing && <span className="badge subtle">syncing…</span>}
+          {syncState?.error && syncState.error !== 'offline' && (
+            <span className="badge warn-badge" title={syncState.error}>
+              sync failed
+            </span>
+          )}
           <span className="muted small">
-            {settings.activeLangs.length > 0
-              ? settings.targetLangs
-                  .filter((l) => settings.activeLangs.includes(l))
-                  .map((l) => LANG_NAMES[l])
-                  .join(' · ')
-              : 'no active language'}
+            {settings.targetLangs
+              .filter((l) => settings.activeLangs.includes(l))
+              .map((l) => LANG_NAMES[l])
+              .join(' · ') || 'no active language'}
           </span>
         </div>
       </header>
@@ -84,14 +160,27 @@ export function App() {
         )}
         {tab === 'add' && <AddWord settings={settings} />}
         {tab === 'browse' && <Browse settings={settings} />}
-        {tab === 'settings' && <SettingsPanel settings={settings} />}
+        {tab === 'settings' && (
+          <SettingsPanel
+            settings={settings}
+            email={email}
+            syncState={syncState}
+            syncing={syncing}
+            onSync={runSync}
+          />
+        )}
       </main>
     </div>
   )
 }
 
-/** Remount the reviewer on every entry so it always builds a fresh queue. */
-function ReviewTab({ settings, onExit }: { settings: Settings; onExit: () => void }) {
+function ReviewTab({
+  settings,
+  onExit,
+}: {
+  settings: Settings
+  onExit: () => void
+}) {
   const [session, setSession] = useState(0)
   return (
     <Review
