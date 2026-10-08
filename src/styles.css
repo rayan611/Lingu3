@@ -308,6 +308,11 @@ kbd {
 .badge.offline { background: var(--warn-soft); color: var(--warn); }
 .badge.new { background: var(--accent); color: #fff; }
 .badge.warn-badge { background: var(--warn-soft); color: var(--warn); }
+.badge.flag {
+  background: var(--warn-soft);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+}
 
 .gender {
   font-size: 0.8rem;
@@ -462,6 +467,24 @@ kbd {
 .grade kbd { margin: 0; border: none; }
 
 .next-bar { position: sticky; bottom: 12px; }
+
+.typed { margin: 4px 0 14px; text-align: left; }
+.typed input {
+  font-size: 1.15rem;
+  padding: 13px 14px;
+  background: var(--panel);
+  border-width: 2px;
+}
+
+.typed-verdict {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  border-left: 3px solid currentColor;
+}
+.typed-verdict.right { background: var(--accent-soft); color: var(--accent-ink); }
+.typed-verdict.wrong { background: var(--warn-soft); color: var(--warn); }
+.typed-verdict em { font-style: normal; font-weight: 600; }
 
 /* --- word card & lists --------------------------------------------------- */
 

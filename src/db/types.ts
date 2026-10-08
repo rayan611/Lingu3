@@ -278,6 +278,16 @@ export interface Settings {
   dailyReviewLimit: number
   /** FSRS target recall probability. 0.9 is the usual default. */
   requestRetention: number
+  /**
+   * Type the answer for this language before revealing, instead of only
+   * recalling it in your head. Deliberately one language: interference between
+   * Swedish and German shows up in production, and typing all three would turn
+   * a two-minute session into a ten-minute one.
+   *
+   * Device-local on purpose — it is a study habit, not account data, and it is
+   * not worth a schema change on the server to carry it between devices.
+   */
+  typedLang?: Lang
   updatedAt: number
 }
 

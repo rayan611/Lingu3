@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { reExpand } from '../ai/expand'
+import { isIncomplete } from '../lib/morphology'
 import { CATEGORIES, type Category, type Settings } from '../db/types'
 import { WordCard } from './WordCard'
 
@@ -10,6 +11,26 @@ export function Browse({ settings }: Props) {
   const [category, setCategory] = useState<Category | 'all'>('all')
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  /**
+   * Which words came back from the model with something missing — a Swedish or
+   * German noun with no gender, or no entries at all. A wrong or absent
+   * der/die/das is the single most expensive error this app can make, because
+   * the scheduler will then drill it for months. `redo` already existed to fix
+   * them; nothing told you which ones to fix.
+   */
+  const flagged = useLiveQuery(async () => {
+    const entries = await db.entries.toArray()
+    const seen = new Set<string>()
+    const bad = new Set<string>()
+    for (const e of entries) {
+      seen.add(e.conceptId)
+      if (settings.targetLangs.includes(e.lang) && isIncomplete(e)) {
+        bad.add(e.conceptId)
+      }
+    }
+    return { bad, seen }
+  }, [settings.targetLangs], { bad: new Set<string>(), seen: new Set<string>() })
 
   const concepts = useLiveQuery(async () => {
     const all = await db.concepts.orderBy('createdAt').reverse().toArray()
@@ -35,12 +56,22 @@ export function Browse({ settings }: Props) {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this word and its review history?')) return
-    // Soft delete: a hard delete can't be replicated to another device later.
+    const now = Date.now()
+
+    // Soft delete throughout. Removing the card rows locally while they live
+    // on the server meant the next full resync quietly put them back, because
+    // a row that is absent locally always looks older than the remote one.
+    // Suspending them instead takes them out of the queue and replicates.
     const concept = await db.concepts.get(id)
     if (concept) {
-      await db.concepts.put({ ...concept, deletedAt: Date.now(), updatedAt: Date.now() })
+      await db.concepts.put({ ...concept, deletedAt: now, updatedAt: now })
     }
-    await db.cards.where('conceptId').equals(id).delete()
+    const cards = await db.cards.where('conceptId').equals(id).toArray()
+    if (cards.length) {
+      await db.cards.bulkPut(
+        cards.map((c) => ({ ...c, suspended: true, updatedAt: now })),
+      )
+    }
     if (selected === id) setSelected(null)
   }
 
@@ -75,6 +106,18 @@ export function Browse({ settings }: Props) {
               <button className="word-list-item" onClick={() => setSelected(c.id)}>
                 <span className="word-list-lemma">{c.lemma}</span>
                 <span className="badge subtle">{c.pos}</span>
+                {!flagged.seen.has(c.id) ? (
+                  <span className="badge flag" title="No translations yet">
+                    not expanded
+                  </span>
+                ) : flagged.bad.has(c.id) ? (
+                  <span
+                    className="badge flag"
+                    title="A noun came back without its gender — press redo"
+                  >
+                    check gender
+                  </span>
+                ) : null}
               </button>
               <div className="word-list-actions">
                 <button

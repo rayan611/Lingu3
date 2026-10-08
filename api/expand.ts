@@ -190,9 +190,84 @@ become several separate entries, not one entry that blurs them.
 Call the record_word tool. Do not write anything outside the tool call.`
 }
 
+/**
+ * ---------------------------------------------------------------------------
+ * Who is allowed to call this
+ * ---------------------------------------------------------------------------
+ *
+ * The site is public, so without a check this endpoint is a free Claude proxy
+ * for anyone who finds it, billed to us. The check is the Supabase access
+ * token the app already holds: the caller sends it, we ask Supabase whose it
+ * is, and we refuse if the answer is nobody.
+ *
+ * A shared secret would have been easier and worthless — a secret shipped in a
+ * public browser bundle is readable by whoever reads the bundle. A token is
+ * per-person, expires on its own, and costs no new environment variables,
+ * since the Supabase URL and publishable key are already configured here.
+ *
+ * If Supabase is not configured at all (local development), the check is
+ * skipped rather than locking the endpoint shut.
+ */
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+const SUPABASE_KEY =
+  process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
+
+const authConfigured = Boolean(SUPABASE_URL && SUPABASE_KEY)
+
+async function callerId(req: Request): Promise<string | null> {
+  const header = req.headers.get('authorization') ?? ''
+  const token = header.toLowerCase().startsWith('bearer ')
+    ? header.slice(7).trim()
+    : ''
+  if (!token) return null
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_KEY as string, authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return null
+    const user = (await res.json()) as { id?: string }
+    return user.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A ceiling on how much one account can spend in an hour. This is per server
+ * instance rather than global, so it is a brake and not a guarantee — the
+ * guarantee is the spend cap in the Anthropic console, which lives outside
+ * this code. 80/hour is far above real use (a heavy session is 30 words) and
+ * far below anything that would cost real money.
+ */
+const HOURLY_LIMIT = 80
+const WINDOW_MS = 60 * 60 * 1000
+const recent = new Map<string, number[]>()
+
+function overLimit(userId: string): boolean {
+  const now = Date.now()
+  const hits = (recent.get(userId) ?? []).filter((t) => now - t < WINDOW_MS)
+  hits.push(now)
+  recent.set(userId, hits)
+  return hits.length > HOURLY_LIMIT
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405)
+  }
+
+  if (authConfigured) {
+    const userId = await callerId(req)
+    if (!userId) {
+      return json({ error: 'Sign in before adding words.' }, 401)
+    }
+    if (overLimit(userId)) {
+      return json(
+        { error: 'Too many words in one hour. Try again later.' },
+        429,
+      )
+    }
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY

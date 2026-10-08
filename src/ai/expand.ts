@@ -1,4 +1,5 @@
 import { db, compositeId, lemmaKey, newId } from '../db/db'
+import { authConfigured, supabase } from '../auth/supabase'
 import { makeCard } from '../fsrs/scheduler'
 import {
   ExpansionSchema,
@@ -29,11 +30,20 @@ export async function fetchExpansion(opts: {
   langs: Lang[]
   hint?: string
 }): Promise<Expansion> {
+  // The endpoint is public, so it authenticates the caller. Sending the
+  // session token is what makes this request ours rather than anyone's.
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (authConfigured) {
+    const { data } = await supabase().auth.getSession()
+    const token = data.session?.access_token
+    if (token) headers.authorization = `Bearer ${token}`
+  }
+
   let res: Response
   try {
     res = await fetch('/api/expand', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body: JSON.stringify(opts),
     })
   } catch {
@@ -49,7 +59,12 @@ export async function fetchExpansion(opts: {
     }
     // 4xx other than rate limiting means the request itself was wrong, so
     // retrying it unchanged would just fail again.
-    const retryable = res.status === 429 || res.status >= 500
+    // 401 is retryable here: the usual cause is a session token that expired
+    // between opening the app and adding a word, and the next attempt carries
+    // a refreshed one. Dropping the word from the queue for that would be
+    // losing work over a five-minute clock.
+    const retryable =
+      res.status === 429 || res.status === 401 || res.status >= 500
     // A gateway timeout has no JSON body of ours to read, so say what it means
     // rather than showing a bare status number.
     const fallback =
@@ -57,7 +72,9 @@ export async function fetchExpansion(opts: {
         ? 'The expansion server timed out before the model answered.'
         : res.status === 429
           ? 'Rate limited. Wait a moment and press "Expand now".'
-          : `Request failed (${res.status}).`
+          : res.status === 401
+            ? 'Your session expired. Reload the page and press "Expand now".'
+            : `Request failed (${res.status}).`
     throw new ExpansionError(detail || fallback, retryable)
   }
 
@@ -124,6 +141,58 @@ export async function applyExpansion(
   })
 }
 
+/**
+ * Finds a word you already have, in two passes.
+ *
+ * The first is the obvious one: the same lemma typed in the same language.
+ * The second catches the case that matters more — typing "dog" in English
+ * when "hund" was already added in Swedish and expanded. They are one idea,
+ * and the reading generator counts known words, so two concepts for one word
+ * would quietly inflate the count and split its review history in half.
+ */
+async function findExisting(lemma: string, sourceLang: Lang) {
+  const key = lemmaKey(lemma, sourceLang)
+
+  const byLemma = await db.concepts
+    .where('sourceLang')
+    .equals(sourceLang)
+    .filter((c) => !c.deletedAt && lemmaKey(c.lemma, c.sourceLang) === key)
+    .first()
+  if (byLemma) return byLemma
+
+  // Compare against the headwords already generated in that language. The
+  // article is stripped first, because entries store "en hund" / "der Hund"
+  // while you would type "hund".
+  const stripped = stripArticle(lemma, sourceLang)
+  const match = await db.entries
+    .where('lang')
+    .equals(sourceLang)
+    .filter(
+      (e) =>
+        lemmaKey(stripArticle(e.headword, e.lang), e.lang) ===
+        lemmaKey(stripped, sourceLang),
+    )
+    .first()
+  if (!match) return undefined
+
+  const concept = await db.concepts.get(match.conceptId)
+  return concept && !concept.deletedAt ? concept : undefined
+}
+
+const ARTICLES: Partial<Record<Lang, string[]>> = {
+  sv: ['en', 'ett'],
+  de: ['der', 'die', 'das'],
+  en: ['a', 'an', 'the'],
+}
+
+function stripArticle(word: string, lang: Lang): string {
+  const parts = word.trim().split(/\s+/)
+  if (parts.length < 2) return word.trim()
+  const first = parts[0].toLocaleLowerCase()
+  if ((ARTICLES[lang] ?? []).includes(first)) return parts.slice(1).join(' ')
+  return word.trim()
+}
+
 export interface AddWordResult {
   conceptId: string
   status: 'expanded' | 'queued' | 'duplicate'
@@ -147,13 +216,7 @@ export async function addWord(opts: {
   if (!lemma) throw new Error('Enter a word first.')
 
   // Dedupe before spending anything on the API.
-  const key = lemmaKey(lemma, opts.sourceLang)
-  const existing = await db.concepts
-    .where('sourceLang')
-    .equals(opts.sourceLang)
-    .filter((c) => !c.deletedAt && lemmaKey(c.lemma, c.sourceLang) === key)
-    .first()
-
+  const existing = await findExisting(lemma, opts.sourceLang)
   if (existing) {
     return {
       conceptId: existing.id,

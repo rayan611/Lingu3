@@ -29,6 +29,8 @@ export function Review({ settings, onExit }: Props) {
   const [revealed, setRevealed] = useState(false)
   const [graded, setGraded] = useState<Record<string, Grade>>({})
   const [sessionCount, setSessionCount] = useState(0)
+  const [typed, setTyped] = useState('')
+  const [typedVerdict, setTypedVerdict] = useState<'right' | 'wrong' | null>(null)
 
   useEffect(() => {
     buildQueue(settings).then(setQueue)
@@ -39,9 +41,29 @@ export function Review({ settings, onExit }: Props) {
   const advance = useCallback(() => {
     setRevealed(false)
     setGraded({})
+    setTyped('')
+    setTypedVerdict(null)
     setIndex((i) => i + 1)
     setSessionCount((c) => c + 1)
   }, [])
+
+  // The language you have chosen to produce rather than merely recognise.
+  const typedLang =
+    settings.typedLang &&
+    item?.cards.some((c) => c.lang === settings.typedLang)
+      ? settings.typedLang
+      : null
+  const typedEntry = typedLang
+    ? item?.entries.find((e) => e.lang === typedLang)
+    : undefined
+
+  function checkTyped() {
+    if (!typedEntry) return
+    setTypedVerdict(
+      sameWord(typed, typedEntry.headword, typedEntry.lang) ? 'right' : 'wrong',
+    )
+    setRevealed(true)
+  }
 
   const rate = useCallback(
     async (card: Card, grade: Grade) => {
@@ -58,6 +80,8 @@ export function Review({ settings, onExit }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return
       if (e.code === 'Space') {
+        // While typing an answer, space is a space.
+        if (!revealed && typedLang) return
         e.preventDefault()
         if (!revealed) setRevealed(true)
         else if (allGraded) advance()
@@ -128,12 +152,49 @@ export function Review({ settings, onExit }: Props) {
             Recall it in{' '}
             {item.cards.map((c) => LANG_NAMES[c.lang]).join(', ')}.
           </p>
-          <button className="primary big" onClick={() => setRevealed(true)}>
+          {typedLang && (
+            <form
+              className="typed"
+              onSubmit={(e) => {
+                e.preventDefault()
+                checkTyped()
+              }}
+            >
+              <input
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder={`Write it in ${LANG_NAMES[typedLang]}`}
+                lang={LANG_BCP47[typedLang]}
+                autoFocus
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <p className="muted small">
+                The article counts for Swedish and German — write{' '}
+                <em>en hund</em>, not <em>hund</em>.
+              </p>
+            </form>
+          )}
+          <button className="primary big" onClick={() => (typedLang ? checkTyped() : setRevealed(true))}>
             Show answer <kbd>space</kbd>
           </button>
         </div>
       ) : (
         <>
+          {typedVerdict && typedEntry && (
+            <div className={`typed-verdict ${typedVerdict}`}>
+              {typedVerdict === 'right' ? (
+                <strong>Correct — you produced it, not just recognised it.</strong>
+              ) : (
+                <>
+                  <strong>You wrote “{typed || '—'}”.</strong> The form to
+                  produce is <em lang={LANG_BCP47[typedEntry.lang]}>{typedEntry.headword}</em>.
+                </>
+              )}
+            </div>
+          )}
+
           <div className="answers">
             {item.cards.map((card) => (
               <LanguageAnswer
@@ -248,4 +309,22 @@ function LanguageAnswer({
       </div>
     </div>
   )
+}
+
+
+/**
+ * Is what you typed the same word? Case and surrounding whitespace are noise,
+ * and so are the diacritic-free spellings a phone keyboard produces, so "fodd"
+ * is accepted for "född". Everything else — including the article, which is
+ * half of what you are learning — has to match.
+ */
+function sameWord(typed: string, headword: string, _lang: Lang): boolean {
+  const normalise = (s: string) =>
+    s
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/\s+/g, ' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+  return normalise(typed) === normalise(headword)
 }

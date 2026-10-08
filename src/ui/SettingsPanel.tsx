@@ -73,10 +73,22 @@ export function SettingsPanel({
             value={settings.nativeLang}
             onChange={(e) => {
               const next = e.target.value as Lang
+              const previous = settings.nativeLang
+              // The language you are leaving becomes something you are
+              // learning, rather than vanishing from the app entirely — which
+              // is what used to happen, silently.
+              const targets = settings.targetLangs.filter((l) => l !== next)
+              const actives = settings.activeLangs.filter((l) => l !== next)
               void saveSettings({
                 nativeLang: next,
-                targetLangs: settings.targetLangs.filter((l) => l !== next),
-                activeLangs: settings.activeLangs.filter((l) => l !== next),
+                targetLangs: targets.includes(previous)
+                  ? targets
+                  : [...targets, previous],
+                activeLangs: actives.includes(previous)
+                  ? actives
+                  : [...actives, previous],
+                typedLang:
+                  settings.typedLang === next ? undefined : settings.typedLang,
               })
             }}
           >
@@ -145,6 +157,33 @@ export function SettingsPanel({
               ))}
           </div>
         )}
+      </div>
+
+      <div className="panel">
+        <h2>Recall</h2>
+        <label className="field">
+          <span>Type the answer for</span>
+          <select
+            value={settings.typedLang ?? ''}
+            onChange={(e) =>
+              void saveSettings({
+                typedLang: e.target.value ? (e.target.value as Lang) : undefined,
+              })
+            }
+          >
+            <option value="">No typing — just reveal</option>
+            {settings.targetLangs.map((l) => (
+              <option key={l} value={l}>
+                {LANG_NAMES[l]}
+              </option>
+            ))}
+          </select>
+          <span className="muted small">
+            Recognising a word and producing it are different skills, and
+            interference between Swedish and German shows up in production. One
+            language only, so a session stays short.
+          </span>
+        </label>
       </div>
 
       <div className="panel">
