@@ -13,7 +13,7 @@
 process.env.VITE_SUPABASE_URL ??= 'https://example.supabase.co'
 process.env.VITE_SUPABASE_ANON_KEY ??= 'test-key'
 
-const { default: handler } = await import('../api/expand')
+const { default: handler, readGemini, readAnthropic } = await import('../api/expand')
 
 const payload = {
   lemma: 'hund',
@@ -82,6 +82,51 @@ for (const [name, call] of [
   const empty = await call('POST', { 'content-type': 'application/json' }, { langs: [] })
   check(`${name}: a malformed body is a clean error, not a crash`, isJson(empty.text), empty.text.slice(0, 80))
 }
+
+console.log('\nBoth providers normalise to the same shape')
+
+// Gemini cannot express a per-language morphology object in its schema, so it
+// returns one as a JSON string. If this unwrapping breaks, every entry silently
+// loses its genders and verb forms while still looking fine.
+const gemini = readGemini({
+  candidates: [
+    {
+      content: {
+        parts: [
+          {
+            text: JSON.stringify({
+              pos: 'noun',
+              entries: [
+                {
+                  lang: 'de',
+                  headword: 'der Hund',
+                  meaning: 'dog',
+                  morphologyJson: '{"kind":"noun","gender":"der","plural":"Hunde"}',
+                },
+              ],
+            }),
+          },
+        ],
+      },
+    },
+  ],
+}) as { entries: Array<{ morphology?: { gender?: string }; morphologyJson?: string }> }
+
+check(
+  'gemini: morphology comes back as an object, not a string',
+  gemini.entries[0].morphology?.gender === 'der',
+  JSON.stringify(gemini.entries[0]),
+)
+check(
+  'gemini: the string field is removed',
+  gemini.entries[0].morphologyJson === undefined,
+  'morphologyJson survived',
+)
+
+const anthropic = readAnthropic({
+  content: [{ type: 'tool_use', name: 'record_word', input: { pos: 'noun', entries: [] } }],
+}) as { pos?: string }
+check('anthropic: the tool call is unwrapped', anthropic?.pos === 'noun', JSON.stringify(anthropic))
 
 if (failures > 0) {
   console.log(`\n${failures} check(s) failed.`)

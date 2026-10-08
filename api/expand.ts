@@ -16,8 +16,24 @@
 // verbs start coming back wrong, set LINGUA_MODEL to a stronger model — the
 // cost difference at a few dozen words a day is small, and a wrong der/die/das
 // gets drilled into you by the scheduler for months.
-const MODEL = process.env.LINGUA_MODEL ?? 'claude-haiku-5-5'
-const API_URL = 'https://api.anthropic.com/v1/messages'
+/**
+ * Two providers, chosen by which key is configured. Gemini wins when its key
+ * is present, because setting it is a deliberate act; Anthropic is the
+ * fallback. Nothing downstream knows or cares which one answered — both are
+ * normalised to the same shape before they leave this file, and the database,
+ * the scheduler and the review screen see identical entries either way.
+ */
+const GEMINI_KEY = process.env.GEMINI_API_KEY
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+const PROVIDER: 'gemini' | 'anthropic' = GEMINI_KEY ? 'gemini' : 'anthropic'
+
+const MODEL =
+  process.env.LINGUA_MODEL ??
+  (PROVIDER === 'gemini' ? 'gemini-2.5-flash' : 'claude-haiku-5-5')
+
+const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
+const GEMINI_URL = (model: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
 
 /**
  * Vercel kills a function at 10 seconds by default, and this one spends nearly
@@ -361,10 +377,13 @@ async function respond(req: Request): Promise<Response> {
     }
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = PROVIDER === 'gemini' ? GEMINI_KEY : ANTHROPIC_KEY
   if (!apiKey) {
     return json(
-      { error: 'ANTHROPIC_API_KEY is not configured on the server.' },
+      {
+        error:
+          'No model key is configured on the server. Set GEMINI_API_KEY or ANTHROPIC_API_KEY.',
+      },
       500,
     )
   }
@@ -398,25 +417,10 @@ async function respond(req: Request): Promise<Response> {
 
   let upstream: Response
   try {
-    upstream = await fetch(API_URL, {
-      method: 'POST',
-      signal: abort.signal,
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 2048,
-        temperature: 0,
-        tools: [TOOL],
-        // Forcing the tool is what makes the output parseable every time
-        // instead of most of the time.
-        tool_choice: { type: 'tool', name: 'record_word' },
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
+    upstream =
+      PROVIDER === 'gemini'
+        ? await callGemini(prompt, apiKey, abort.signal)
+        : await callAnthropic(prompt, apiKey, abort.signal)
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       return json(
@@ -432,23 +436,170 @@ async function respond(req: Request): Promise<Response> {
   if (!upstream.ok) {
     const detail = await upstream.text()
     return json(
-      { error: `Model request failed (${upstream.status}).`, detail: detail.slice(0, 500) },
+      {
+        error: `Model request failed (${upstream.status}).`,
+        detail: detail.slice(0, 500),
+      },
       upstream.status === 429 ? 429 : 502,
     )
   }
 
-  const data = (await upstream.json()) as {
-    content?: Array<{ type: string; name?: string; input?: unknown }>
+  let expansion: unknown
+  try {
+    expansion =
+      PROVIDER === 'gemini'
+        ? readGemini(await upstream.json())
+        : readAnthropic(await upstream.json())
+  } catch (err) {
+    return json(
+      { error: `Could not read the model's answer: ${String(err)}` },
+      502,
+    )
   }
-  const block = data.content?.find(
-    (c) => c.type === 'tool_use' && c.name === 'record_word',
-  )
 
-  if (!block?.input) {
+  if (!expansion) {
     return json({ error: 'Model did not return a usable result.' }, 502)
   }
 
-  return json(block.input, 200)
+  return json(expansion, 200)
+}
+
+// ---------------------------------------------------------------------------
+// Anthropic
+// ---------------------------------------------------------------------------
+
+function callAnthropic(prompt: string, key: string, signal: AbortSignal) {
+  return fetch(ANTHROPIC_URL, {
+    method: 'POST',
+    signal,
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 2048,
+      temperature: 0,
+      tools: [TOOL],
+      // Forcing the tool is what makes the output parseable every time
+      // instead of most of the time.
+      tool_choice: { type: 'tool', name: 'record_word' },
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  })
+}
+
+export function readAnthropic(data: unknown): unknown {
+  const content = (data as { content?: Array<{ type: string; name?: string; input?: unknown }> })
+    .content
+  const block = content?.find((c) => c.type === 'tool_use' && c.name === 'record_word')
+  return block?.input ?? null
+}
+
+// ---------------------------------------------------------------------------
+// Gemini
+// ---------------------------------------------------------------------------
+
+/**
+ * Gemini's structured output uses an OpenAPI subset, and that subset has no
+ * way to say "an object whose shape depends on the language" — every OBJECT
+ * must declare its properties up front. Morphology is exactly that: a Swedish
+ * noun and a German verb share no fields.
+ *
+ * So morphology is requested as a JSON *string* and parsed here, before the
+ * answer leaves this file. The app still receives a real object and validates
+ * it against the per-language schema it already has, which is where a malformed
+ * one gets dropped. Asking for a flattened one-size-fits-all object instead
+ * would have thrown away der/die/das and haben/sein, which are the fields most
+ * worth having.
+ */
+const GEMINI_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    pos: {
+      type: 'STRING',
+      enum: ['noun', 'verb', 'adjective', 'adverb', 'preposition', 'phrase', 'other'],
+    },
+    normalisedLemma: { type: 'STRING' },
+    entries: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          lang: { type: 'STRING', enum: ['fa', 'en', 'sv', 'de'] },
+          headword: { type: 'STRING' },
+          meaning: { type: 'STRING' },
+          morphologyJson: {
+            type: 'STRING',
+            description:
+              'The morphology object for this language, serialised as a JSON string, exactly per the morphology rules.',
+          },
+          example: { type: 'STRING' },
+          exampleGloss: { type: 'STRING' },
+          notes: { type: 'STRING' },
+        },
+        required: ['lang', 'headword', 'meaning', 'morphologyJson'],
+      },
+    },
+  },
+  required: ['pos', 'entries'],
+}
+
+function callGemini(prompt: string, key: string, signal: AbortSignal) {
+  // The tool-call instruction is Anthropic-specific; Gemini is told to fill
+  // the schema instead, and morphology goes in as a JSON string.
+  const adapted = prompt
+    .replace(
+      'Call the record_word tool. Do not write anything outside the tool call.',
+      [
+        'Answer with JSON matching the required schema and nothing else.',
+        'Put each language\'s morphology object into "morphologyJson" as a',
+        'JSON string — the same keys the rules above specify, serialised.',
+      ].join(' '),
+    )
+
+  return fetch(`${GEMINI_URL(MODEL)}?key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    signal,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: adapted }] }],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 4096,
+        responseMimeType: 'application/json',
+        responseSchema: GEMINI_SCHEMA,
+      },
+    }),
+  })
+}
+
+export function readGemini(data: unknown): unknown {
+  const text = (
+    data as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+    }
+  ).candidates?.[0]?.content?.parts?.[0]?.text
+
+  if (!text) return null
+  const parsed = JSON.parse(text) as {
+    entries?: Array<{ morphologyJson?: string; morphology?: unknown }>
+  }
+
+  // Back into the shape the app validates: morphology as an object.
+  for (const entry of parsed.entries ?? []) {
+    if (typeof entry.morphologyJson === 'string') {
+      try {
+        entry.morphology = JSON.parse(entry.morphologyJson)
+      } catch {
+        // A morphology that will not parse costs that word its tables, not the
+        // whole entry — the headword, meaning and example are still good.
+      }
+      delete entry.morphologyJson
+    }
+  }
+  return parsed
 }
 
 function json(payload: unknown, status: number): Response {
