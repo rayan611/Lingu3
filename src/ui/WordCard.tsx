@@ -92,6 +92,14 @@ export function WordCard({
               {entry.example && (
                 <div className="example" lang={LANG_BCP47[entry.lang]}>
                   {entry.example}
+                  {entry.exampleGloss && !isNative && (
+                    <div
+                      className={`example-gloss ${RTL_LANGS.has(settings.nativeLang) ? 'rtl' : ''}`}
+                      lang={LANG_BCP47[settings.nativeLang]}
+                    >
+                      {entry.exampleGloss}
+                    </div>
+                  )}
                 </div>
               )}
               {entry.notes && <div className="note">{entry.notes}</div>}

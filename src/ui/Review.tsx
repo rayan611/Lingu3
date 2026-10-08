@@ -219,6 +219,14 @@ function LanguageAnswer({
       {entry?.example && (
         <div className="example" lang={LANG_BCP47[card.lang]}>
           {entry.example}
+          {entry.exampleGloss && (
+            <div
+              className={`example-gloss ${RTL_LANGS.has(settings.nativeLang) ? 'rtl' : ''}`}
+              lang={LANG_BCP47[settings.nativeLang]}
+            >
+              {entry.exampleGloss}
+            </div>
+          )}
         </div>
       )}
       {entry?.notes && <div className="note">{entry.notes}</div>}

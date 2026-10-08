@@ -50,7 +50,15 @@ export async function fetchExpansion(opts: {
     // 4xx other than rate limiting means the request itself was wrong, so
     // retrying it unchanged would just fail again.
     const retryable = res.status === 429 || res.status >= 500
-    throw new ExpansionError(detail || `Request failed (${res.status}).`, retryable)
+    // A gateway timeout has no JSON body of ours to read, so say what it means
+    // rather than showing a bare status number.
+    const fallback =
+      res.status === 504
+        ? 'The expansion server timed out before the model answered.'
+        : res.status === 429
+          ? 'Rate limited. Wait a moment and press "Expand now".'
+          : `Request failed (${res.status}).`
+    throw new ExpansionError(detail || fallback, retryable)
   }
 
   const parsed = ExpansionSchema.safeParse(await res.json())

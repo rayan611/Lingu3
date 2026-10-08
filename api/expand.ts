@@ -19,6 +19,25 @@
 const MODEL = process.env.LINGUA_MODEL ?? 'claude-haiku-5-5'
 const API_URL = 'https://api.anthropic.com/v1/messages'
 
+/**
+ * Vercel kills a function at 10 seconds by default, and this one spends nearly
+ * all its time waiting on a single model call that writes four languages of
+ * structured output. That is comfortably more than ten seconds, so every
+ * request died as a 504 before the model had finished — the word saved, the
+ * expansion never arrived.
+ *
+ * 60s is the Hobby-plan ceiling. The call does not normally take anywhere near
+ * it; the number exists so a slow one finishes instead of being executed.
+ */
+export const maxDuration = 60
+
+/**
+ * Abandon the upstream call a few seconds before Vercel would kill the
+ * function, so a slow model returns a readable error through our own JSON
+ * shape rather than a gateway page the client cannot parse.
+ */
+const UPSTREAM_TIMEOUT_MS = 50_000
+
 const LANG_NAMES: Record<string, string> = {
   fa: 'Persian (Farsi)',
   en: 'English',
@@ -208,10 +227,14 @@ export default async function handler(req: Request): Promise<Response> {
 
   const prompt = buildPrompt({ lemma, sourceLang, nativeLang, langs, hint: body.hint })
 
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), UPSTREAM_TIMEOUT_MS)
+
   let upstream: Response
   try {
     upstream = await fetch(API_URL, {
       method: 'POST',
+      signal: abort.signal,
       headers: {
         'content-type': 'application/json',
         'x-api-key': apiKey,
@@ -229,7 +252,15 @@ export default async function handler(req: Request): Promise<Response> {
       }),
     })
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return json(
+        { error: 'The model took too long to answer. Try "Expand now" again.' },
+        504,
+      )
+    }
     return json({ error: `Could not reach the model: ${String(err)}` }, 502)
+  } finally {
+    clearTimeout(timer)
   }
 
   if (!upstream.ok) {

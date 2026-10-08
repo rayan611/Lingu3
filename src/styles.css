@@ -422,6 +422,15 @@ kbd {
   color: var(--ink-soft);
   font-style: italic;
 }
+.example-gloss {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-style: normal;
+  font-size: 0.88rem;
+  color: var(--ink-faint);
+}
+
 .note {
   margin-top: 10px;
   font-size: 0.84rem;
