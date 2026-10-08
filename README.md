@@ -35,7 +35,7 @@ The expansion endpoint needs a key. Locally, put it in `.env`:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-LINGUA_MODEL=claude-sonnet-5-5   # optional override
+LINGUA_MODEL=claude-haiku-5-5    # optional; this is the default
 ```
 
 `npm run dev` serves the front end only. To exercise `/api/expand` locally, run `vercel dev` instead (`npm i -g vercel`). Without a key the app still works — words save locally and sit in the pending queue.

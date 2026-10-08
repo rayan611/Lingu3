@@ -11,7 +11,12 @@
  * The API key lives here and never reaches the browser.
  */
 
-const MODEL = process.env.LINGUA_MODEL ?? 'claude-sonnet-5-5'
+// Haiku is the default: this task is short, structured and runs at low volume,
+// so the cheapest model is the right starting point. If genders or auxiliary
+// verbs start coming back wrong, set LINGUA_MODEL to a stronger model — the
+// cost difference at a few dozen words a day is small, and a wrong der/die/das
+// gets drilled into you by the scheduler for months.
+const MODEL = process.env.LINGUA_MODEL ?? 'claude-haiku-5-5'
 const API_URL = 'https://api.anthropic.com/v1/messages'
 
 const LANG_NAMES: Record<string, string> = {
