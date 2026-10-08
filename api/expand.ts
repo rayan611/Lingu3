@@ -252,7 +252,98 @@ function overLimit(userId: string): boolean {
   return hits.length > HOURLY_LIMIT
 }
 
-export default async function handler(req: Request): Promise<Response> {
+/**
+ * ---------------------------------------------------------------------------
+ * Two calling conventions, one function
+ * ---------------------------------------------------------------------------
+ *
+ * This is why nothing worked. Vercel can invoke a Node function either with
+ * web objects (Request in, Response out) or with the older Node pair
+ * (req, res) — and this project gets the older one. A handler written for the
+ * web signature does not fail loudly under it; it fails in two confusing ways:
+ *
+ *   - returning a Response writes nothing to `res`, so the request simply
+ *     hangs until the gateway gives up — that was the 504, and the reason
+ *     opening /api/expand in a browser showed a blank page
+ *   - `req.json()` and `req.headers.get()` do not exist on a Node request, so
+ *     the first one called throws, and Vercel answers with its own HTML error
+ *     page — that was the 500, with no JSON body for the app to read, which is
+ *     why the queue could only show the bare status number
+ *
+ * So the entry point now detects which it was handed, and the real work stays
+ * in `respond`, written once against web objects.
+ */
+type NodeResponse = {
+  statusCode: number
+  setHeader: (k: string, v: string) => void
+  end: (body?: string) => void
+}
+
+type NodeRequest = {
+  method?: string
+  url?: string
+  headers: Record<string, string | string[] | undefined>
+  body?: unknown
+}
+
+export default async function handler(
+  req: Request | NodeRequest,
+  res?: NodeResponse,
+): Promise<Response | void> {
+  // Web signature: nothing to translate.
+  if (!res || typeof res.setHeader !== 'function') {
+    return guarded(req as Request)
+  }
+
+  // Node signature: build a Request, run the same code, write the Response out.
+  const response = await guarded(toWebRequest(req as NodeRequest))
+  res.statusCode = response.status
+  response.headers.forEach((value, key) => res.setHeader(key, value))
+  res.end(await response.text())
+}
+
+function toWebRequest(req: NodeRequest): Request {
+  const headers = new Headers()
+  for (const [key, value] of Object.entries(req.headers ?? {})) {
+    if (typeof value === 'string') headers.set(key, value)
+    else if (Array.isArray(value)) headers.set(key, value.join(', '))
+  }
+
+  // Vercel has already parsed a JSON body into req.body by this point, so it
+  // is re-serialised rather than read from the stream, which is consumed.
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
+  return new Request(`https://local${req.url ?? '/api/expand'}`, {
+    method: req.method ?? 'GET',
+    headers,
+    body: hasBody ? rawBody(req.body) : undefined,
+  })
+}
+
+/** The body as text, whether the platform parsed it for us or did not. */
+function rawBody(body: unknown): string | undefined {
+  if (body === undefined || body === null) return undefined
+  if (typeof body === 'string') return body
+  if (body instanceof Uint8Array) return new TextDecoder().decode(body)
+  return JSON.stringify(body)
+}
+
+/**
+ * Nothing thrown in here should ever reach the platform's error page: an HTML
+ * 500 is unreadable to the app, which can only report the status number. Any
+ * failure comes back as our own JSON so the queue can show what happened.
+ */
+async function guarded(req: Request): Promise<Response> {
+  try {
+    return await respond(req)
+  } catch (err) {
+    return json(
+      { error: `Expansion crashed: ${err instanceof Error ? err.message : String(err)}` },
+      500,
+    )
+  }
+}
+
+async function respond(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405)
   }
