@@ -27,9 +27,13 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const PROVIDER: 'gemini' | 'anthropic' = GEMINI_KEY ? 'gemini' : 'anthropic'
 
+// Google retired gemini-2.5-flash for keys created after its deprecation: a new
+// key gets 404 "no longer available to new users", naming its replacement. The
+// model string is the one piece of this file with a shelf life, so when the
+// expansion starts 404ing, read the message — it says what to put here.
 const MODEL =
   process.env.LINGUA_MODEL ??
-  (PROVIDER === 'gemini' ? 'gemini-2.5-flash' : 'claude-haiku-5-5')
+  (PROVIDER === 'gemini' ? 'gemini-3.8-flash' : 'claude-haiku-5-5')
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const GEMINI_URL = (model: string) =>
