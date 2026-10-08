@@ -138,7 +138,16 @@ export async function setMeta(key: string, value: string | number | null) {
   await db.meta.put({ key, value })
 }
 
-export async function getSettings(): Promise<Settings> {
+/**
+ * Creates the settings row if it is missing. Call this once at boot — never
+ * from inside a live query.
+ *
+ * It used to be one function that read and wrote. Used as a live query, the
+ * write re-triggered the very query that performed it, so the app spun on a
+ * fresh database instead of rendering. Reads and writes are separated now so
+ * that cannot happen again.
+ */
+export async function ensureSettings(): Promise<Settings> {
   const existing = await db.settings.get('singleton')
   if (existing) return existing
   const fresh = { ...DEFAULT_SETTINGS, updatedAt: Date.now() }
@@ -146,8 +155,17 @@ export async function getSettings(): Promise<Settings> {
   return fresh
 }
 
+/** Pure read — safe inside a live query. */
+export async function readSettings(): Promise<Settings> {
+  const existing = await db.settings.get('singleton')
+  return existing ?? { ...DEFAULT_SETTINGS, updatedAt: 0 }
+}
+
+/** @deprecated use ensureSettings at boot, readSettings in queries. */
+export const getSettings = ensureSettings
+
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
-  const current = await getSettings()
+  const current = await ensureSettings()
   await db.settings.put({ ...current, ...patch, updatedAt: Date.now() })
 }
 

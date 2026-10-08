@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { adoptLocalData, db, getSettings, openForUser } from './db/db'
+import { adoptLocalData, db, ensureSettings, openForUser, readSettings } from './db/db'
 import { queueCounts } from './fsrs/queue'
 import { processPending } from './ai/expand'
 import { LANG_NAMES, type Settings } from './db/types'
@@ -30,6 +30,8 @@ export function App() {
         // Anything added before signing in belongs to this account now.
         await adoptLocalData().catch(() => 0)
       }
+      // Create the settings row here, once, rather than from a live query.
+      await ensureSettings()
       if (!cancelled) {
         setDbKey(userId ?? 'local')
         setDbReady(true)
@@ -68,7 +70,7 @@ function Workspace({
   const [syncing, setSyncing] = useState(false)
   const syncTimer = useRef<number | null>(null)
 
-  const settings = useLiveQuery(() => getSettings(), [])
+  const settings = useLiveQuery(() => readSettings(), [])
   const counts = useLiveQuery(
     async () => (settings ? queueCounts(settings) : null),
     [settings],
@@ -126,9 +128,7 @@ function Workspace({
           {!online && <span className="badge offline">offline</span>}
           {syncing && <span className="badge subtle">syncing…</span>}
           {syncState?.error && syncState.error !== 'offline' && (
-            <span className="badge warn-badge" title={syncState.error}>
-              sync failed
-            </span>
+            <span className="badge warn-badge">sync failed</span>
           )}
           <span className="muted small">
             {settings.targetLangs
@@ -153,6 +153,30 @@ function Workspace({
           Settings
         </TabButton>
       </nav>
+
+      {syncState?.error && syncState.error !== 'offline' && (
+        <div className="sync-banner">
+          <div>
+            <strong>Sync didn't work.</strong>{' '}
+            <span className="muted">
+              Your words are safe on this device — this only affects the copy on
+              the server.
+            </span>
+            <pre className="sync-banner-detail">{syncState.error}</pre>
+          </div>
+          <div className="row">
+            <button onClick={() => void runSync()} disabled={syncing}>
+              Try again
+            </button>
+            <button
+              className="link"
+              onClick={() => void navigator.clipboard?.writeText(syncState.error ?? '')}
+            >
+              Copy error
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="content">
         {tab === 'review' && (

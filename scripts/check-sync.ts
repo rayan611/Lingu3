@@ -6,7 +6,7 @@
  * Run with: npx tsx scripts/check-sync.ts
  */
 import 'fake-indexeddb/auto'
-import { adoptLocalData, db, openForUser, getMeta, setMeta } from '../src/db/db'
+import { adoptLocalData, db, openForUser, getMeta, setMeta, readSettings, ensureSettings } from '../src/db/db'
 import type { Concept } from '../src/db/types'
 
 let failures = 0
@@ -72,7 +72,25 @@ async function main() {
     !!local2 && remoteNewer.updatedAt > local2.updatedAt,
   )
 
-  console.log('\n4. Sync cursors survive and reset')
+  console.log('\n4. Reading settings never writes')
+  // A live query that writes re-triggers itself. This is what left a fresh
+  // database spinning instead of rendering, so it gets a guard.
+  await openForUser('user-3')
+  const writesBefore = await db.settings.count()
+  const first = await readSettings()
+  const writesAfter = await db.settings.count()
+  check('readSettings returns usable defaults on an empty db', first.targetLangs.length > 0)
+  check(
+    'and writes nothing',
+    writesBefore === 0 && writesAfter === 0,
+    `rows before ${writesBefore}, after ${writesAfter}`,
+  )
+  await ensureSettings()
+  check('ensureSettings does create the row', (await db.settings.count()) === 1)
+  await ensureSettings()
+  check('and is idempotent', (await db.settings.count()) === 1)
+
+  console.log('\n5. Sync cursors survive and reset')
   await setMeta('sync.lastPulledAt', 12345)
   check('cursor reads back', (await getMeta('sync.lastPulledAt')) === 12345)
   await setMeta('sync.lastPulledAt', 0)

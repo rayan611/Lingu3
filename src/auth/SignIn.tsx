@@ -37,13 +37,37 @@ export function SignIn() {
   return (
     <div className="app">
       <div className="signin">
-        <div className="brand signin-brand">Lingua</div>
+        <header className="signin-intro">
+          <h1 className="signin-brand">Lingu3</h1>
+          <p className="signin-tagline">
+            A place to make your own learning material and study up to three
+            languages at once.
+          </p>
+          <p className="signin-blurb">
+            Add a word once in your own language. It comes back with the meaning,
+            gender and verb forms in every language you are learning, side by
+            side, and then returns for review exactly when you are about to
+            forget it.
+          </p>
+          <ul className="signin-points">
+            <li>
+              <strong>Three languages, one card.</strong> Each language is
+              scheduled on its own, so the one you find hard does not drag the
+              easy ones with it.
+            </li>
+            <li>
+              <strong>Works offline.</strong> Reviewing never needs a
+              connection — only adding new words does.
+            </li>
+            <li>
+              <strong>Your words, everywhere.</strong> Add on your computer,
+              review on your phone.
+            </li>
+          </ul>
+        </header>
+
         <form className="panel" onSubmit={submit}>
           <h2>{mode === 'in' ? 'Sign in' : 'Create an account'}</h2>
-          <p className="muted small">
-            Your words sync to your account, so you can review on your phone and
-            add on your computer.
-          </p>
 
           <label className="field">
             <span>Email</span>
