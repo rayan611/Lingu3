@@ -94,6 +94,83 @@ async function main() {
     `got ${queue[0]?.cards.length}`,
   )
 
+  console.log('\n2b. Only the due language is gradeable; the rest ride along')
+  // The whole point of the split: German drags the word forward, but English
+  // on a four-month interval must not be graded (and credited) on German's
+  // schedule. It is still shown — reading it is free — just not rated.
+  const split = queue[0]!
+  check(
+    'the word still carries all three languages for display',
+    split.cards.length === 3,
+    `got ${split.cards.length}`,
+  )
+  check(
+    'exactly the overdue one is gradeable',
+    split.dueCards.length === 1 && split.dueCards[0]!.lang === 'de',
+    `got ${split.dueCards.map((c) => c.lang).join(',') || 'none'}`,
+  )
+  check(
+    'the other two are shown but not gradeable',
+    split.upcomingCards.length === 2 &&
+      split.upcomingCards.every((c) => c.due > Date.now()),
+    `got ${split.upcomingCards.map((c) => c.lang).join(',')}`,
+  )
+  check(
+    'due and upcoming together are exactly the active cards, no duplicates',
+    split.dueCards.length + split.upcomingCards.length === split.cards.length,
+  )
+
+  // Grading the due language must leave the others untouched — the Training
+  // no-write assertion, applied to a word that was on screen during a review.
+  const before = await Promise.all(
+    split.upcomingCards.map(async (c) => (await db.cards.get(c.id))!),
+  )
+  const logsBefore = await db.reviewLog.count()
+  await gradeCard(split.dueCards[0]!, Rating.Good, settings)
+  const after = await Promise.all(before.map(async (c) => (await db.cards.get(c.id))!))
+  check(
+    'a language that was only displayed keeps its due, stability and updatedAt',
+    before.every(
+      (b, i) =>
+        after[i]!.due === b.due &&
+        after[i]!.stability === b.stability &&
+        after[i]!.reps === b.reps &&
+        after[i]!.updatedAt === b.updatedAt,
+    ),
+  )
+  check(
+    'and writes no review log row of its own',
+    (await db.reviewLog.count()) === logsBefore + 1,
+    `${await db.reviewLog.count()} rows, expected ${logsBefore + 1}`,
+  )
+
+  // Reviewing an upcoming language early is allowed when asked for, and it
+  // really does schedule: a shorter elapsed time than planned simply yields a
+  // smaller stability gain, which is well-defined in FSRS.
+  const earlyBefore = (await db.cards.get(`${id}:en`))!
+  const early = await gradeCard(earlyBefore, Rating.Good, settings)
+  check(
+    'reviewing an upcoming language on purpose does write',
+    early.reps === earlyBefore.reps + 1 && early.updatedAt >= earlyBefore.updatedAt,
+    `reps ${earlyBefore.reps} -> ${early.reps}`,
+  )
+  check(
+    'and its next date is recomputed from now, not left where it was',
+    early.due !== earlyBefore.due && early.due > Date.now(),
+    `${Math.round((early.due - Date.now()) / DAY)}d out`,
+  )
+
+  // Put the word back where section 3 expects it.
+  for (const lang of ['sv', 'de', 'en'] as Lang[]) {
+    const c = (await db.cards.get(`${id}:${lang}`))!
+    await db.cards.put({ ...c, due: Date.now() + 30 * DAY })
+  }
+  await db.cards.put({
+    ...(await db.cards.get(`${id}:de`))!,
+    due: Date.now() - 1000,
+  })
+  queue = await buildQueue(settings)
+
   console.log('\n3. Pausing a language freezes it instead of losing it')
   const deBefore = (await db.cards.get(`${id}:de`))!
   await saveSettings({ activeLangs: ['sv', 'en'] })
@@ -131,6 +208,10 @@ async function main() {
   check(
     'each carries three language cards (3 x 2 = 6 cards, not 2)',
     q.every((i) => i.cards.length === 3),
+  )
+  check(
+    'a brand-new word has all three due at once, so all three are gradeable',
+    q.every((i) => i.dueCards.length === 3 && i.upcomingCards.length === 0),
   )
 
   console.log(

@@ -8,6 +8,21 @@ export interface QueueItem {
   entries: Entry[]
   /** One card per active target language, in the same priority order. */
   cards: Card[]
+  /**
+   * The active cards that are actually due — the only ones that may be graded.
+   *
+   * A word enters the queue when its soonest language comes up, which used to
+   * mean grading all of them. English on a four-month interval was being
+   * reviewed on German's schedule and credited for it, which is unearned
+   * stability in a card that had not been recalled at its own horizon.
+   */
+  dueCards: Card[]
+  /**
+   * Active cards whose own date has not arrived. Shown under the answer so the
+   * side-by-side reading is preserved, never graded unless asked for
+   * explicitly — the same rule Training follows.
+   */
+  upcomingCards: Card[]
   /** The earliest due time among active cards — what orders the queue. */
   dueAt: number
   isNew: boolean
@@ -141,7 +156,13 @@ export async function buildQueue(
         (c) => c.conceptId === concept.id && active.includes(c.lang) && !c.suspended,
       )
       .sort((a, b) => active.indexOf(a.lang) - active.indexOf(b.lang))
-    return { concept, entries, cards, dueAt, isNew }
+    // `now` is captured once at the top of the build, so every item in a queue
+    // splits against the same instant. Using Date.now() here would let a word
+    // near its due moment land on a different side of the line than the count
+    // in the header said it would.
+    const dueCards = cards.filter((c) => c.due <= now)
+    const upcomingCards = cards.filter((c) => c.due > now)
+    return { concept, entries, cards, dueCards, upcomingCards, dueAt, isNew }
   })
 }
 

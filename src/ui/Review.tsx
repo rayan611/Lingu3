@@ -7,6 +7,7 @@ import {
   GRADES,
   GRADE_HINTS,
   GRADE_LABELS,
+  formatInterval,
   gradeCard,
   previewIntervals,
 } from '../fsrs/scheduler'
@@ -18,7 +19,7 @@ import {
   type Lang,
   type Settings,
 } from '../db/types'
-import { genderBadge, morphLines } from '../lib/morphology'
+import { genderBadge } from '../lib/morphology'
 
 interface Props {
   settings: Settings
@@ -34,6 +35,8 @@ export function Review({ settings, onExit }: Props) {
   const [typed, setTyped] = useState('')
   const [typedVerdict, setTypedVerdict] = useState<'right' | 'wrong' | null>(null)
   const [topic, setTopic] = useState<string>('all')
+  /** Upcoming languages the user chose to review early on this word. */
+  const [extra, setExtra] = useState<Lang[]>([])
 
   useEffect(() => {
     setQueue(null)
@@ -73,6 +76,7 @@ export function Review({ settings, onExit }: Props) {
     setGraded({})
     setTyped('')
     setTypedVerdict(null)
+    setExtra([])
     setIndex((i) => i + 1)
     setSessionCount((c) => c + 1)
   }, [])
@@ -80,7 +84,7 @@ export function Review({ settings, onExit }: Props) {
   // The language you have chosen to produce rather than merely recognise.
   const typedLang =
     settings.typedLang &&
-    item?.cards.some((c) => c.lang === settings.typedLang)
+    item?.dueCards.some((c) => c.lang === settings.typedLang)
       ? settings.typedLang
       : null
   const typedEntry = typedLang
@@ -120,7 +124,7 @@ export function Review({ settings, onExit }: Props) {
       if (!revealed) return
       const n = Number(e.key)
       if (n >= 1 && n <= 4) {
-        const next = item.cards.find((c) => graded[c.lang] === undefined)
+        const next = item.dueCards.find((c) => graded[c.lang] === undefined)
         if (next) void rate(next, GRADES[n - 1] as Grade)
       }
     }
@@ -128,9 +132,17 @@ export function Review({ settings, onExit }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  /**
+   * Only the due languages gate the Next button. An upcoming language can be
+   * graded on purpose via "Review it now", and once it is it joins the gate so
+   * a half-finished extra rating is not silently skipped past.
+   */
   const allGraded = useMemo(
-    () => !!item && item.cards.every((c) => graded[c.lang] !== undefined),
-    [item, graded],
+    () =>
+      !!item &&
+      item.dueCards.every((c) => graded[c.lang] !== undefined) &&
+      extra.every((lang) => graded[lang] !== undefined),
+    [item, graded, extra],
   )
 
   if (queue === null) {
@@ -181,15 +193,21 @@ export function Review({ settings, onExit }: Props) {
         >
           {prompt?.headword ?? item.concept.lemma}
         </div>
-        {prompt?.meaning && <div className="prompt-gloss">{prompt.meaning}</div>}
-        <div className="prompt-pos muted">{item.concept.pos}</div>
+        {/*
+          No meaning, in any language, while a word is being tested — not the
+          native gloss on the prompt and not the target-language definition on
+          the answer. A definition sitting beside a word you are being asked to
+          recall is the answer in another costume, and it turns retrieval
+          practice into recognition. Meanings are still on the word card, in
+          Training and in Reading, where reading them is the point.
+        */}
       </div>
 
       {!revealed ? (
         <div className="reveal-area">
           <p className="muted">
             Recall it in{' '}
-            {item.cards.map((c) => LANG_NAMES[c.lang]).join(', ')}.
+            {item.dueCards.map((c) => LANG_NAMES[c.lang]).join(', ')}.
           </p>
           {typedLang && (
             <form
@@ -235,7 +253,7 @@ export function Review({ settings, onExit }: Props) {
           )}
 
           <div className="answers">
-            {item.cards.map((card) => (
+            {item.dueCards.map((card) => (
               <LanguageAnswer
                 key={card.lang}
                 card={card}
@@ -245,6 +263,26 @@ export function Review({ settings, onExit }: Props) {
                 onRate={(g) => void rate(card, g)}
               />
             ))}
+            {item.upcomingCards.map((card) =>
+              extra.includes(card.lang) ? (
+                <LanguageAnswer
+                  key={card.lang}
+                  card={card}
+                  item={item}
+                  settings={settings}
+                  grade={graded[card.lang]}
+                  onRate={(g) => void rate(card, g)}
+                />
+              ) : (
+                <UpcomingAnswer
+                  key={card.lang}
+                  card={card}
+                  item={item}
+                  settings={settings}
+                  onReviewNow={() => setExtra((e) => [...e, card.lang as Lang])}
+                />
+              ),
+            )}
           </div>
 
           <div className="next-bar">
@@ -258,7 +296,7 @@ export function Review({ settings, onExit }: Props) {
                   Next <kbd>space</kbd>
                 </>
               ) : (
-                'Rate every language to continue'
+                'Rate every due language to continue'
               )}
             </button>
           </div>
@@ -286,7 +324,6 @@ function LanguageAnswer({
     () => previewIntervals(card, settings),
     [card, settings],
   )
-  const lines = entry ? morphLines(card.lang, entry.morphology) : []
   const gender = entry ? genderBadge(card.lang, entry.morphology) : null
   const priority = settings.targetLangs.indexOf(card.lang as Lang) + 1
 
@@ -303,18 +340,6 @@ function LanguageAnswer({
       <div className="answer-word" lang={LANG_BCP47[card.lang]}>
         {entry?.headword ?? '—'}
       </div>
-      {entry?.meaning && <div className="answer-meaning">{entry.meaning}</div>}
-
-      {lines.length > 0 && (
-        <dl className="forms">
-          {lines.map((l) => (
-            <div key={l.label} className="form-row">
-              <dt>{l.label}</dt>
-              <dd lang={LANG_BCP47[card.lang]}>{l.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
 
       {/*
         The example is shown in the target language only. Its translation into
@@ -328,7 +353,6 @@ function LanguageAnswer({
           {entry.example}
         </div>
       )}
-      {entry?.notes && <div className="note">{entry.notes}</div>}
 
       <div className="grades">
         {GRADES.map((g, i) => (
@@ -349,6 +373,59 @@ function LanguageAnswer({
   )
 }
 
+
+/**
+ * A language on this word whose own date has not arrived.
+ *
+ * It is shown, because seeing the three side by side is most of why the
+ * layout stacks them — and because reading a form you are not being graded on
+ * is exactly the free exposure that costs nothing. It is not graded, because
+ * what you merely look at must not write scheduler state. That is the rule
+ * Training already follows, applied here.
+ */
+function UpcomingAnswer({
+  card,
+  item,
+  settings,
+  onReviewNow,
+}: {
+  card: Card
+  item: QueueItem
+  settings: Settings
+  onReviewNow: () => void
+}) {
+  const entry = item.entries.find((e) => e.lang === card.lang)
+  const gender = entry ? genderBadge(card.lang, entry.morphology) : null
+  const priority = settings.targetLangs.indexOf(card.lang as Lang) + 1
+
+  return (
+    <div className="answer upcoming">
+      <div className="answer-head">
+        <span className="lang-chip">
+          <span className="prio">{priority}</span>
+          {LANG_NAMES[card.lang]}
+        </span>
+        {gender && <span className={`gender gender-${gender}`}>{gender}</span>}
+        <span className="muted small">
+          not due — {formatInterval(card.due - Date.now())} to go
+        </span>
+      </div>
+
+      <div className="answer-word" lang={LANG_BCP47[card.lang]}>
+        {entry?.headword ?? '—'}
+      </div>
+      {entry?.example && (
+        <div className="example" lang={LANG_BCP47[card.lang]}>
+          {entry.example}
+        </div>
+      )}
+
+      <button className="link" onClick={onReviewNow}>
+        Review it now anyway
+      </button>
+    </div>
+  )
+}
 
 function TopicBar({
   topic,

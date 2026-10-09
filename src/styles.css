@@ -403,6 +403,16 @@ kbd {
   transition: opacity 0.15s, box-shadow 0.15s;
 }
 .answer.rated { opacity: 0.55; box-shadow: none; }
+/* A language on this word whose own date has not arrived: present to read,
+   visibly not part of the test. Dashed and unsaturated so the eye does not
+   mistake it for something awaiting a rating. */
+.answer.upcoming {
+  border-style: dashed;
+  border-left-color: var(--line);
+  background: var(--panel-soft);
+  box-shadow: none;
+}
+.answer.upcoming .answer-word { font-weight: 500; color: var(--ink-soft); }
 .answer-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
 .answer-word { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em; }
 .answer-meaning { color: var(--ink-soft); font-size: 0.92rem; }
@@ -446,10 +456,15 @@ kbd {
 }
 
 .grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 16px; }
+/* These are the four buttons pressed most often in the whole app, usually
+   one-handed on a phone. They are sized for a thumb, not for the density of
+   the surrounding text. */
 .grade {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 10px 4px;
-  font-size: 0.8rem;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 14px 4px;
+  min-height: 64px;
+  justify-content: center;
+  font-size: 1rem;
   border-color: color-mix(in srgb, currentColor 35%, transparent);
   background: color-mix(in srgb, currentColor 7%, var(--panel));
 }
@@ -462,8 +477,8 @@ kbd {
 .grade.chosen .grade-label, .grade.chosen .grade-interval, .grade.chosen kbd {
   color: var(--panel);
 }
-.grade-label { font-weight: 600; white-space: nowrap; }
-.grade-interval { font-size: 0.72rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.grade-label { font-weight: 600; white-space: nowrap; font-size: 1.02rem; }
+.grade-interval { font-size: 0.78rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
 .grade kbd { margin: 0; border: none; }
 
 .next-bar { position: sticky; bottom: 12px; }
