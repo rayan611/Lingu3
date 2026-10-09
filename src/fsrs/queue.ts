@@ -49,6 +49,7 @@ async function newConceptsToday(): Promise<number> {
 export async function buildQueue(
   settings: Settings,
   limit = 60,
+  topic: string | null = null,
 ): Promise<QueueItem[]> {
   const active = settings.targetLangs.filter((l) =>
     settings.activeLangs.includes(l),
@@ -90,6 +91,10 @@ export async function buildQueue(
   const candidates = concepts
     .map((concept, i) => {
       if (!concept || concept.deletedAt) return null
+      // A topic filter narrows which words appear; it never changes which ones
+      // are due. Everything outside the filter stays due and keeps counting
+      // against the global total shown in the header.
+      if (!matchesTopic(concept, topic)) return null
       const meta = byConcept.get(conceptIds[i])!
       return { concept, dueAt: meta.dueAt, isNew: meta.anyNew }
     })
@@ -147,7 +152,10 @@ export interface QueueCounts {
   perLang: Record<string, number>
 }
 
-export async function queueCounts(settings: Settings): Promise<QueueCounts> {
+export async function queueCounts(
+  settings: Settings,
+  topic: string | null = null,
+): Promise<QueueCounts> {
   const active = settings.targetLangs.filter((l) =>
     settings.activeLangs.includes(l),
   )
@@ -161,12 +169,26 @@ export async function queueCounts(settings: Settings): Promise<QueueCounts> {
           .filter((c) => !c.suspended && c.due <= now)
           .toArray()
 
+  // When a topic is in focus, drop cards whose concept is outside it — but
+  // only after the due query, so the numbers mean "due AND in this topic".
+  let visible = cards
+  if (topic && topic !== 'all' && cards.length) {
+    const ids = [...new Set(cards.map((c) => c.conceptId))]
+    const concepts = await db.concepts.bulkGet(ids)
+    const keep = new Set(
+      concepts
+        .filter((c): c is Concept => !!c && matchesTopic(c, topic))
+        .map((c) => c.id),
+    )
+    visible = cards.filter((c) => keep.has(c.conceptId))
+  }
+
   const perLang: Record<string, number> = {}
   for (const l of active) perLang[l] = 0
   const newConcepts = new Set<string>()
   const dueConcepts = new Set<string>()
 
-  for (const c of cards) {
+  for (const c of visible) {
     perLang[c.lang] = (perLang[c.lang] ?? 0) + 1
     if (c.state === State.New) newConcepts.add(c.conceptId)
     else dueConcepts.add(c.conceptId)
@@ -175,11 +197,23 @@ export async function queueCounts(settings: Settings): Promise<QueueCounts> {
   return {
     due: dueConcepts.size,
     newWords: newConcepts.size,
-    total: new Set(cards.map((c) => c.conceptId)).size,
+    total: new Set(visible.map((c) => c.conceptId)).size,
     perLang,
   }
 }
 
 export function isActive(lang: Lang, settings: Settings): boolean {
   return settings.activeLangs.includes(lang)
+}
+
+/**
+ * Does this concept belong to the topic the user is focusing on?
+ *
+ * Matches the legacy single `category` field and the newer multi-valued
+ * `tags`, so a focus session works on words added before tags existed.
+ */
+export function matchesTopic(concept: Concept, topic: string | null): boolean {
+  if (!topic || topic === 'all') return true
+  if (concept.category === topic) return true
+  return (concept.tags ?? []).includes(topic)
 }

@@ -140,8 +140,11 @@ function Workspace({
       </header>
 
       <nav className="tabs">
+        {/* The tab is called Test; the id, the route and review_log keep their
+            names. Renaming the storage layer to match a label is how a sync
+            bug gets shipped for nothing. */}
         <TabButton id="review" tab={tab} set={setTab} badge={due}>
-          Review
+          Test
         </TabButton>
         <TabButton id="add" tab={tab} set={setTab}>
           Add

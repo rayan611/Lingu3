@@ -185,7 +185,15 @@ export interface Concept {
   /** Which language they typed it in. */
   sourceLang: Lang
   pos: PartOfSpeech
+  /** @deprecated single-category field; kept so pre-tags words keep working. */
   category: Category
+  /**
+   * Topics, free text and multi-valued. A word is routinely more than one
+   * thing — `beställa` is restaurant and work — so a single category could not
+   * survive contact with real use. `category` above is the old single field;
+   * both are honoured when filtering.
+   */
+  tags?: string[]
   notes?: string
   createdAt: number
   updatedAt: number

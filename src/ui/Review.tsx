@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import type { Grade } from 'ts-fsrs'
-import { buildQueue, type QueueItem } from '../fsrs/queue'
+import { db } from '../db/db'
+import { buildQueue, queueCounts, type QueueItem } from '../fsrs/queue'
 import {
   GRADES,
   GRADE_HINTS,
@@ -31,10 +33,38 @@ export function Review({ settings, onExit }: Props) {
   const [sessionCount, setSessionCount] = useState(0)
   const [typed, setTyped] = useState('')
   const [typedVerdict, setTypedVerdict] = useState<'right' | 'wrong' | null>(null)
+  const [topic, setTopic] = useState<string>('all')
 
   useEffect(() => {
-    buildQueue(settings).then(setQueue)
-  }, [settings])
+    setQueue(null)
+    setIndex(0)
+    buildQueue(settings, 60, topic === 'all' ? null : topic).then(setQueue)
+  }, [settings, topic])
+
+  /** Every topic in use, from both the old category field and the new tags. */
+  const topics = useLiveQuery(async () => {
+    const concepts = await db.concepts.toArray()
+    const set = new Set<string>()
+    for (const c of concepts) {
+      if (c.deletedAt) continue
+      if (c.category) set.add(c.category)
+      for (const t of c.tags ?? []) set.add(t)
+    }
+    return [...set].sort()
+  }, [], [])
+
+  /**
+   * Focusing on a topic narrows what you see, never what is due. Showing the
+   * global number next to the filtered one is what stops a month of restaurant
+   * words quietly starving everything else.
+   */
+  const counts = useLiveQuery(
+    async () => ({
+      focused: (await queueCounts(settings, topic === 'all' ? null : topic)).total,
+      overall: (await queueCounts(settings)).total,
+    }),
+    [settings, topic],
+  )
 
   const item = queue?.[index]
 
@@ -109,6 +139,13 @@ export function Review({ settings, onExit }: Props) {
 
   if (!item) {
     return (
+      <div className="stack">
+        <TopicBar
+          topic={topic}
+          setTopic={setTopic}
+          topics={topics}
+          counts={counts}
+        />
       <div className="panel done">
         <h2>{sessionCount > 0 ? 'Session finished' : 'Nothing due'}</h2>
         <p className="muted">
@@ -120,6 +157,7 @@ export function Review({ settings, onExit }: Props) {
           Back
         </button>
       </div>
+      </div>
     )
   }
 
@@ -128,6 +166,7 @@ export function Review({ settings, onExit }: Props) {
 
   return (
     <div className="review">
+      <TopicBar topic={topic} setTopic={setTopic} topics={topics} counts={counts} />
       <div className="review-head">
         <span className="muted">{remaining} left</span>
         {item.isNew && <span className="badge new">new</span>}
@@ -277,17 +316,16 @@ function LanguageAnswer({
         </dl>
       )}
 
+      {/*
+        The example is shown in the target language only. Its translation into
+        the native language sits right next to a word you are being asked to
+        recall, which hands you the answer and turns retrieval practice into
+        recognition. The gloss is still there in Training and on the word card,
+        where reading it is the point.
+      */}
       {entry?.example && (
         <div className="example" lang={LANG_BCP47[card.lang]}>
           {entry.example}
-          {entry.exampleGloss && (
-            <div
-              className={`example-gloss ${RTL_LANGS.has(settings.nativeLang) ? 'rtl' : ''}`}
-              lang={LANG_BCP47[settings.nativeLang]}
-            >
-              {entry.exampleGloss}
-            </div>
-          )}
         </div>
       )}
       {entry?.notes && <div className="note">{entry.notes}</div>}
@@ -311,6 +349,42 @@ function LanguageAnswer({
   )
 }
 
+
+function TopicBar({
+  topic,
+  setTopic,
+  topics,
+  counts,
+}: {
+  topic: string
+  setTopic: (t: string) => void
+  topics: string[]
+  counts: { focused: number; overall: number } | undefined
+}) {
+  if (topics.length === 0) return null
+  return (
+    <div className="topic-bar">
+      <label className="field inline">
+        <span className="muted small">Focus</span>
+        <select value={topic} onChange={(e) => setTopic(e.target.value)}>
+          <option value="all">All topics</option>
+          {topics.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </label>
+      {counts && (
+        <span className="muted small">
+          {topic === 'all'
+            ? `${counts.overall} due`
+            : `${counts.focused} due here · ${counts.overall} due overall`}
+        </span>
+      )}
+    </div>
+  )
+}
 
 /**
  * Is what you typed the same word? Case and surrounding whitespace are noise,
