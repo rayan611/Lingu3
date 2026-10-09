@@ -7,6 +7,7 @@ import { signOut } from '../auth/useSession'
 import { resetSyncCursors, type SyncResult } from '../sync/sync'
 import { THEMES, THEME_LABELS, readTheme, saveTheme, type Theme } from '../lib/theme'
 import { ImportExport } from './ImportExport'
+import { Profile } from './Profile'
 
 interface SettingsPanelProps {
   settings: Settings
@@ -25,6 +26,12 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [theme, setTheme] = useState<Theme>(() => readTheme())
   const [name, setName] = useState(settings.displayName ?? '')
+  /**
+   * Profile moved in here when the tab bar was cut to six. It is collapsed by
+   * default: Settings is where you come to change something, and a page of
+   * charts above the controls makes you scroll past it every time.
+   */
+  const [showProfile, setShowProfile] = useState(false)
 
   const cardCounts =
     useLiveQuery(async () => {
@@ -80,6 +87,22 @@ export function SettingsPanel({
 
   return (
     <div className="stack">
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Your progress</h2>
+          <button className="link" onClick={() => setShowProfile((v) => !v)}>
+            {showProfile ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {showProfile ? (
+          <Profile settings={settings} email={email} />
+        ) : (
+          <p className="muted small">
+            Words learned, your review streak and a breakdown per language.
+          </p>
+        )}
+      </div>
+
       <div className="panel">
         <h2>You</h2>
         <label className="field">

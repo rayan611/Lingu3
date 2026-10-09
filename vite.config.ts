@@ -22,7 +22,9 @@ export default defineConfig({
         // for about twelve characters and no more.
         short_name: 'Lingu3',
         description: 'Learn up to 3 languages at once, from your own words',
-        theme_color: '#1f2933',
+        // The navy of the L3 tile, so the splash screen and the Android
+        // task-switcher bar match the icon instead of the old slate.
+        theme_color: '#1b365d',
         background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',

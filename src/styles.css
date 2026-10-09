@@ -37,6 +37,12 @@
   --grade-hard: #8a5f1b;
   --grade-good: #2f6f5e;
   --grade-easy: #3a6ea5;
+
+  /* The mark. Fixed across every theme and matching the installed icon: a
+     logo that changes colour with the palette is not a logo. Mirrored in
+     scripts/make-icons.py — change both together. */
+  --logo-tile: #1b365d;
+  --logo-ink: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -102,48 +108,49 @@ p { margin: 0.4rem 0; }
 /* --- top bar & tabs ------------------------------------------------------ */
 
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 22px 0 14px;
-  flex-wrap: wrap;
 }
 .brand {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 1.4rem;
   letter-spacing: -0.015em;
+}
+.logo { display: block; flex: none; }
+.topbar-greeting {
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-meta {
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-/* A small mark made of three stacked bars — one per language. Pure CSS. */
-.brand::before {
-  content: '';
-  width: 10px;
-  height: 22px;
-  border-radius: 3px;
-  background: linear-gradient(
-    180deg,
-    var(--accent) 0 32%,
-    var(--grade-easy) 34% 66%,
-    var(--warn) 68% 100%
-  );
-}
-.topbar-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+/* Wraps instead of scrolling sideways. A horizontally scrolling tab bar hides
+   whichever tab you are looking for and gives no sign that it is doing it;
+   two visible rows beat one row with half of it off-screen. */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 4px;
-  padding: 4px;
+  padding: 5px;
   margin-bottom: 20px;
   background: var(--panel-soft);
   border: 1px solid var(--line);
-  border-radius: 999px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  border-radius: 22px;
 }
-.tabs::-webkit-scrollbar { display: none; }
 .tab {
   background: none;
   border: none;
@@ -159,12 +166,46 @@ p { margin: 0.4rem 0; }
   gap: 7px;
   transition: background-color 0.15s, color 0.15s;
 }
+/* A round chip rather than an icon font or an image: no extra request, no
+   glyph that fails to load, and it scales with the text. */
+.tab-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--bg-tint);
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  line-height: 1;
+  transition: background-color 0.15s, color 0.15s;
+}
+.tab.active .tab-icon { background: var(--accent); color: #fff; }
 .tab:hover { color: var(--ink); }
 .tab.active {
   color: var(--ink);
   background: var(--panel);
   box-shadow: var(--shadow);
   font-weight: 500;
+}
+/* Two rows of three on a phone: every tab reachable with a thumb and none of
+   them off the edge. */
+@media (max-width: 560px) {
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-radius: 18px; }
+  .tab { justify-content: center; padding: 9px 6px; gap: 5px; font-size: 0.84rem; }
+}
+@media (max-width: 380px) {
+  .tab-label { display: none; }
+  .tab-icon { width: 28px; height: 28px; font-size: 0.95rem; }
+}
+
+/* Below this width the greeting is the first thing to go: the mark says which
+   app this is and the language line is live state, but you know your own
+   name. */
+@media (max-width: 560px) {
+  .topbar { grid-template-columns: auto 1fr; padding: 16px 0 12px; }
+  .topbar-greeting { display: none; }
 }
 .tab-badge {
   background: var(--accent);
@@ -816,7 +857,7 @@ kbd {
 }
 
 /* --- Header: name, languages, install -------------------------------------- */
-.brand-block { display: flex; flex-direction: column; line-height: 1.25; }
+.brand-block { display: flex; align-items: center; gap: 9px; line-height: 1.25; }
 .brand-sub { font-size: 0.75rem; color: var(--ink-faint); }
 .install-button {
   font-size: 0.78rem;
@@ -1016,3 +1057,13 @@ kbd {
   flex-direction: column;
   gap: 0.4rem;
 }
+
+/* A panel heading with an action on the right — used by the collapsed
+   progress section at the top of Settings. */
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.panel-head h2 { margin: 0; }

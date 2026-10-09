@@ -20,21 +20,19 @@ import { AddWord } from './ui/AddWord'
 import { Review } from './ui/Review'
 import { Browse } from './ui/Browse'
 import { Training } from './ui/Training'
-import { Profile } from './ui/Profile'
 import { StoryMode } from './ui/StoryMode'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { InstallButton } from './ui/InstallButton'
 import { NamePrompt } from './ui/NamePrompt'
+import { Logo } from './ui/Logo'
 import { applyTheme, readTheme } from './lib/theme'
 
-type Tab =
-  | 'review'
-  | 'training'
-  | 'read'
-  | 'add'
-  | 'browse'
-  | 'profile'
-  | 'settings'
+/**
+ * Profile is not here: it lives inside Settings now. Seven tabs did not fit a
+ * phone without a sideways scroll that hid whichever tab you wanted, and of
+ * the seven, Profile was the one you open monthly rather than daily.
+ */
+type Tab = 'add' | 'training' | 'read' | 'review' | 'browse' | 'settings'
 
 export function App() {
   const { session, userId, email } = useSession()
@@ -91,7 +89,7 @@ function Workspace({
   userId: string | null
   email: string | null
 }) {
-  const [tab, setTab] = useState<Tab>('review')
+  const [tab, setTab] = useState<Tab>('add')
   const [online, setOnline] = useState(navigator.onLine)
   const [syncState, setSyncState] = useState<SyncResult | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -206,14 +204,20 @@ function Workspace({
 
   return (
     <div className="app">
+      {/* Three zones: who the app is, who you are, what you are studying.
+          On a phone the greeting drops out before the other two, because the
+          mark identifies the app and the language line is the one piece of
+          state worth seeing on every screen. */}
       <header className="topbar">
         <div className="brand-block">
-          <span className="brand">
-            {settings.displayName ? `Hej ${settings.displayName}` : 'Lingu3'}
-          </span>
-          <span className="brand-sub">{learningLine(settings)}</span>
+          <Logo />
+          <span className="brand">Lingu3</span>
+        </div>
+        <div className="topbar-greeting">
+          {settings.displayName && <span>Hej {settings.displayName}</span>}
         </div>
         <div className="topbar-meta">
+          <span className="brand-sub">{learningLine(settings)}</span>
           {!online && <span className="badge offline">offline</span>}
           {syncing && <span className="badge subtle">syncing…</span>}
           {syncState?.error && !BENIGN_SYNC_ERRORS.has(syncState.error) && (
@@ -225,29 +229,27 @@ function Workspace({
 
       {authConfigured && !settings.displayName && <NamePrompt />}
 
+      {/* Ordered the way a session actually goes: add words, train them,
+          read them, then test. The tab is called Test; the id, the route and
+          review_log keep their names. Renaming the storage layer to match a
+          label is how a sync bug gets shipped for nothing. */}
       <nav className="tabs">
-        {/* The tab is called Test; the id, the route and review_log keep their
-            names. Renaming the storage layer to match a label is how a sync
-            bug gets shipped for nothing. */}
-        <TabButton id="review" tab={tab} set={setTab} badge={due}>
-          Test
-        </TabButton>
-        <TabButton id="training" tab={tab} set={setTab}>
-          Training
-        </TabButton>
-        <TabButton id="read" tab={tab} set={setTab}>
-          Reading
-        </TabButton>
-        <TabButton id="add" tab={tab} set={setTab}>
+        <TabButton id="add" tab={tab} set={setTab} icon="+">
           Add
         </TabButton>
-        <TabButton id="browse" tab={tab} set={setTab}>
+        <TabButton id="training" tab={tab} set={setTab} icon="◎">
+          Training
+        </TabButton>
+        <TabButton id="read" tab={tab} set={setTab} icon="▤">
+          Reading
+        </TabButton>
+        <TabButton id="review" tab={tab} set={setTab} badge={due} icon="✓">
+          Test
+        </TabButton>
+        <TabButton id="browse" tab={tab} set={setTab} icon="☰">
           Words
         </TabButton>
-        <TabButton id="profile" tab={tab} set={setTab}>
-          Profile
-        </TabButton>
-        <TabButton id="settings" tab={tab} set={setTab}>
+        <TabButton id="settings" tab={tab} set={setTab} icon="⚙">
           Settings
         </TabButton>
       </nav>
@@ -284,7 +286,6 @@ function Workspace({
         {tab === 'read' && <StoryMode settings={settings} />}
         {tab === 'add' && <AddWord settings={settings} />}
         {tab === 'browse' && <Browse settings={settings} />}
-        {tab === 'profile' && <Profile settings={settings} email={email} />}
         {tab === 'settings' && (
           <SettingsPanel
             settings={settings}
@@ -343,17 +344,26 @@ function TabButton({
   tab,
   set,
   badge,
+  icon,
   children,
 }: {
   id: Tab
   tab: Tab
   set: (t: Tab) => void
   badge?: number
+  icon: string
   children: React.ReactNode
 }) {
   return (
-    <button className={`tab ${tab === id ? 'active' : ''}`} onClick={() => set(id)}>
-      {children}
+    <button
+      className={`tab ${tab === id ? 'active' : ''}`}
+      onClick={() => set(id)}
+      aria-current={tab === id ? 'page' : undefined}
+    >
+      <span className="tab-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="tab-label">{children}</span>
       {badge !== undefined && badge > 0 && <span className="tab-badge">{badge}</span>}
     </button>
   )
