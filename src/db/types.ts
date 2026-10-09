@@ -332,6 +332,21 @@ export const ExpansionEntrySchema = z.object({
   notes: z.string().optional(),
 })
 
+/**
+ * A word worth knowing alongside this one — usually not a synonym but a
+ * register variant. `hallo` and `tjena` mean the same thing; which one you
+ * say to your manager is the part that is hard to get from a dictionary.
+ */
+export const RelatedWordSchema = z.object({
+  lang: z.enum(LANGS as [Lang, ...Lang[]]),
+  word: z.string().min(1).max(60),
+  meaning: z.string().max(80).optional(),
+  /** "casual", "formal", "written only", "northern Sweden" — one or two words. */
+  register: z.string().max(40).optional(),
+  note: z.string().max(140).optional(),
+})
+export type RelatedWord = z.infer<typeof RelatedWordSchema>
+
 export const ExpansionSchema = z.object({
   pos: z.enum(PARTS_OF_SPEECH),
   /** Suggested topics. Advisory — the user can change them before saving. */
@@ -339,6 +354,7 @@ export const ExpansionSchema = z.object({
   /** The model may correct a typo or strip an article; we show this to the user. */
   normalisedLemma: z.string().optional(),
   entries: z.array(ExpansionEntrySchema).min(1),
+  related: z.array(RelatedWordSchema).max(6).optional(),
 })
 export type Expansion = z.infer<typeof ExpansionSchema>
 

@@ -136,6 +136,30 @@ const TOOL = {
         description:
           'The input cleaned up: typo fixed, article stripped, verb put in the infinitive. Omit if the input was already clean.',
       },
+      related: {
+        type: 'array',
+        description:
+          'Up to four other words worth knowing beside this one, in the target languages. Prefer register and usage variants over plain synonyms: hallo/tjena differ by formality, not meaning, and which one to use with a manager is the part a dictionary does not tell you. Omit rather than padding.',
+        items: {
+          type: 'object',
+          properties: {
+            lang: { type: 'string', enum: ['fa', 'en', 'sv', 'de'] },
+            word: { type: 'string' },
+            meaning: { type: 'string', description: 'A few words at most.' },
+            register: {
+              type: 'string',
+              description:
+                'One or two words: casual, formal, written, spoken, dated, regional.',
+            },
+            note: {
+              type: 'string',
+              description:
+                'When to reach for this one instead. One short sentence.',
+            },
+          },
+          required: ['lang', 'word'],
+        },
+      },
       entries: {
         type: 'array',
         items: {
@@ -208,6 +232,14 @@ the others: a literal translation produces stilted German and unidiomatic
 Swedish. The learner reads these stacked on top of each other and compares
 them, so they should be recognisably the same scene said the way each
 language actually says it.
+
+RELATED WORDS — also return up to four words worth knowing beside this one,
+in the target languages. Prefer REGISTER and usage variants over plain
+synonyms: "hallo" and "tjena" mean the same thing and differ by formality,
+and which one to use with a manager is the part a dictionary does not tell
+you. Same for du/ni, jobba/arbeta. Label each with a one-or-two-word register
+and a short note on when to reach for it. Return fewer, or none, rather than
+padding the list with words that are merely adjacent.
 
 TOPICS — also return one to three lowercase topic tags saying where the word
 is used: everyday, food, restaurant, shopping, travel, work, home, health,
@@ -539,6 +571,20 @@ const GEMINI_SCHEMA = {
     },
     normalisedLemma: { type: 'STRING' },
     tags: { type: 'ARRAY', items: { type: 'STRING' } },
+    related: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          lang: { type: 'STRING', enum: ['fa', 'en', 'sv', 'de'] },
+          word: { type: 'STRING' },
+          meaning: { type: 'STRING' },
+          register: { type: 'STRING' },
+          note: { type: 'STRING' },
+        },
+        required: ['lang', 'word'],
+      },
+    },
     entries: {
       type: 'ARRAY',
       items: {

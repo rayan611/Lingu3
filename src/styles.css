@@ -918,3 +918,17 @@ kbd {
 }
 .stat-table tr.paused { color: var(--ink-faint); }
 .stat-table td:first-child { display: flex; gap: 0.4rem; align-items: center; }
+
+
+/* --- Related words ---------------------------------------------------------- */
+.related-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+.related-list > li {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.7rem;
+  background: var(--panel-soft);
+}
+.related-main { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.related-word { font-size: 1.05rem; font-weight: 600; }
+.related-meaning { color: var(--ink-soft); font-size: 0.88rem; margin-top: 0.15rem; }
+.related-action { margin-top: 0.45rem; }

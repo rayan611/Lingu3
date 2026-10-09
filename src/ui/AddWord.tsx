@@ -13,11 +13,13 @@ import {
   LANG_NAMES,
   type Category,
   type Lang,
+  type RelatedWord,
   type Settings,
 } from '../db/types'
 import { WordCard } from './WordCard'
 import { BulkAdd } from './BulkAdd'
 import { PreviewCard } from './PreviewCard'
+import { RelatedWords } from './RelatedWords'
 
 interface Props {
   settings: Settings
@@ -40,6 +42,12 @@ export function AddWord({ settings }: Props) {
   const [quick, setQuick] = useState(false)
   /** The tags that will be saved — seeded by the model, edited here. */
   const [draftTags, setDraftTags] = useState<string[]>([])
+  /**
+   * Suggestions from the last expansion. Kept after the word is saved so the
+   * list does not vanish at the moment it becomes useful — these are not
+   * stored anywhere, they come back with the expansion.
+   */
+  const [related, setRelated] = useState<RelatedWord[]>([])
 
   /** Topics already in use, offered as one-tap suggestions. */
   const tagSuggestions = useLiveQuery(
@@ -79,6 +87,7 @@ export function AddWord({ settings }: Props) {
     setBusy(true)
     setStatus(null)
     setPreview(null)
+    setRelated([])
     try {
       // Always expand first and look at it. The only difference quick mode
       // makes is that it does not stop to ask.
@@ -98,6 +107,7 @@ export function AddWord({ settings }: Props) {
         return
       }
 
+      setRelated(result.preview.expansion.related ?? [])
       const suggested = normaliseTags(result.preview.expansion.tags)
       if (quick) {
         await save(result.preview, suggested)
@@ -264,6 +274,14 @@ export function AddWord({ settings }: Props) {
           onTagsChange={setDraftTags}
           tagSuggestions={tagSuggestions}
           onAdd={() => void save(preview, draftTags)}
+        />
+      )}
+
+      {related.length > 0 && (
+        <RelatedWords
+          related={related}
+          settings={settings}
+          category={category}
         />
       )}
 

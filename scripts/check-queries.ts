@@ -213,6 +213,79 @@ async function main() {
     }
   })
 
+  console.log('\n13. Related words')
+  await check('a related word starts its first review days later', async () => {
+    // Semantically similar words learned together interfere, so a word and the
+    // register variant added from its card must not land in the same session.
+    const { applyExpansion } = await import('../src/ai/expand')
+    const settings = await ensureSettings()
+    const id = 'related-host'
+    await db.concepts.put({
+      id,
+      lemma: 'tjena',
+      sourceLang: 'sv',
+      pos: 'phrase',
+      category: 'daily',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    await applyExpansion(
+      id,
+      {
+        pos: 'phrase',
+        entries: [
+          { lang: 'fa', headword: 'سلام', meaning: 'hi' },
+          { lang: 'sv', headword: 'tjena', meaning: 'hi, casual' },
+          { lang: 'de', headword: 'hallo', meaning: 'hi' },
+          { lang: 'en', headword: 'hi', meaning: 'hi' },
+        ],
+      },
+      settings,
+      { newCardDelayMs: 3 * 86_400_000 },
+    )
+    const cards = await db.cards.where('conceptId').equals(id).toArray()
+    if (cards.length === 0) throw new Error('no cards were made')
+    const soonest = Math.min(...cards.map((c) => c.due))
+    if (soonest < Date.now() + 2 * 86_400_000) {
+      throw new Error('a staggered card must not be due straight away')
+    }
+    // And it must not appear in today's queue.
+    const queue = await buildQueue(settings)
+    if (queue.some((q) => q.concept.id === id)) {
+      throw new Error('a staggered word turned up in today\'s queue')
+    }
+  })
+  await check('an expansion without a stagger is due immediately', async () => {
+    const { applyExpansion } = await import('../src/ai/expand')
+    const settings = await ensureSettings()
+    const id = 'related-plain'
+    await db.concepts.put({
+      id,
+      lemma: 'plain',
+      sourceLang: 'sv',
+      pos: 'noun',
+      category: 'daily',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    await applyExpansion(
+      id,
+      {
+        pos: 'noun',
+        entries: [
+          { lang: 'sv', headword: 'en bil', meaning: 'car' },
+          { lang: 'de', headword: 'das Auto', meaning: 'car' },
+          { lang: 'en', headword: 'car', meaning: 'car' },
+        ],
+      },
+      settings,
+    )
+    const cards = await db.cards.where('conceptId').equals(id).toArray()
+    if (cards.some((c) => c.due > Date.now() + 60_000)) {
+      throw new Error('a normal add must still be due now')
+    }
+  })
+
   console.log('\n12. Profile statistics')
   await check('stats compute from existing rows and never write', async () => {
     const { computeStats } = await import('../src/lib/stats')

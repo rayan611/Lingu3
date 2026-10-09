@@ -116,6 +116,7 @@ export async function applyExpansion(
   conceptId: string,
   expansion: Expansion,
   settings: Settings,
+  opts: { newCardDelayMs?: number } = {},
 ): Promise<void> {
   const now = Date.now()
   const wanted = new Set<Lang>([settings.nativeLang, ...settings.targetLangs])
@@ -160,7 +161,13 @@ export async function applyExpansion(
       if (!entries.some((e) => e.lang === lang)) continue
       const id = compositeId(conceptId, lang)
       const existing = await db.cards.get(id)
-      if (!existing) await db.cards.add(makeCard(conceptId, lang))
+      if (existing) continue
+      const card = makeCard(conceptId, lang)
+      if (opts.newCardDelayMs) {
+        card.due += opts.newCardDelayMs
+        card.updatedAt = now
+      }
+      await db.cards.add(card)
     }
 
     await db.pending.where('conceptId').equals(conceptId).delete()
@@ -587,6 +594,77 @@ export async function processPending(
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * How long a word suggested beside another one waits before its first review.
+ *
+ * Semantically similar words learned at the same time interfere with each
+ * other — Tinkham and Waring both found near-synonyms and sets like
+ * left/right/up/down are harder to retain together than apart. A word and the
+ * register variant you added from its card are exactly that pair, so they are
+ * kept out of the same session rather than introduced side by side.
+ */
+export const RELATED_STAGGER_DAYS = 3
+
+/**
+ * Adds a word suggested alongside another one. Same path as any other add —
+ * dedupe, expand, write — with the first review pushed out.
+ */
+export async function addRelatedWord(opts: {
+  lemma: string
+  sourceLang: Lang
+  category: Category
+  tags?: string[]
+  settings: Settings
+}): Promise<AddWordResult> {
+  const lemma = opts.lemma.trim()
+  if (!lemma) throw new Error('Nothing to add.')
+
+  const existing = await findExisting(lemma, opts.sourceLang)
+  if (existing) {
+    return {
+      conceptId: existing.id,
+      status: 'duplicate',
+      message: `"${existing.lemma}" is already in your list.`,
+    }
+  }
+
+  const now = Date.now()
+  const concept: Concept = {
+    id: newId(),
+    lemma,
+    sourceLang: opts.sourceLang,
+    pos: 'other',
+    category: opts.category,
+    tags: opts.tags?.length ? normaliseTags(opts.tags) : undefined,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.concepts.add(concept)
+
+  try {
+    const expansion = await fetchExpansion({
+      lemma,
+      sourceLang: opts.sourceLang,
+      nativeLang: opts.settings.nativeLang,
+      langs: [opts.settings.nativeLang, ...opts.settings.targetLangs],
+    })
+    await applyExpansion(concept.id, expansion, opts.settings, {
+      newCardDelayMs: RELATED_STAGGER_DAYS * 86_400_000,
+    })
+    return { conceptId: concept.id, status: 'expanded' }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    await db.pending.put({
+      id: newId(),
+      conceptId: concept.id,
+      attempts: 1,
+      lastError: message,
+      createdAt: now,
+    })
+    return { conceptId: concept.id, status: 'queued', message }
+  }
+}
 
 /** Re-runs expansion for a word that came out wrong, keeping its schedule. */
 export async function reExpand(
