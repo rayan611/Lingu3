@@ -69,6 +69,7 @@ function Workspace({
   const [syncState, setSyncState] = useState<SyncResult | null>(null)
   const [syncing, setSyncing] = useState(false)
   const syncTimer = useRef<number | null>(null)
+  const debounceTimer = useRef<number | null>(null)
 
   const settings = useLiveQuery(() => readSettings(), [])
   const counts = useLiveQuery(
@@ -76,6 +77,20 @@ function Workspace({
     [settings],
   )
   useLiveQuery(() => db.cards.count(), [])
+
+  /**
+   * The most recent local write, used to sync shortly after you change
+   * something rather than up to five minutes later. Both tables index
+   * `updatedAt`, so this is one key lookup each and it re-fires on any write.
+   */
+  const lastWrite =
+    useLiveQuery(async () => {
+      const [concept, card] = await Promise.all([
+        db.concepts.orderBy('updatedAt').last(),
+        db.cards.orderBy('updatedAt').last(),
+      ])
+      return Math.max(concept?.updatedAt ?? 0, card?.updatedAt ?? 0)
+    }, []) ?? 0
 
   useEffect(() => {
     const up = () => setOnline(true)
@@ -110,6 +125,48 @@ function Workspace({
   useEffect(() => {
     if (online) void runSync()
   }, [online, runSync])
+
+  /**
+   * Sync when the app goes to the background.
+   *
+   * Not on exit: `beforeunload` frequently never fires on iOS, and a PWA that
+   * is backgrounded and then killed by the system never sees it at all.
+   * `visibilitychange` to hidden does fire — switching apps, locking the
+   * phone, closing the tab — which is the moment that actually matters.
+   */
+  useEffect(() => {
+    if (!userId) return
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void runSync()
+    }
+    document.addEventListener('visibilitychange', onHide)
+    // A belt-and-braces second trigger for desktop browsers, where it is
+    // reliable. Harmless where it is not: sync is idempotent.
+    window.addEventListener('pagehide', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onHide)
+    }
+  }, [userId, runSync])
+
+  /**
+   * And a few seconds after a local change, so a word added on the phone is on
+   * the laptop by the time you get there. Debounced, because grading a card
+   * writes once per language and a review session would otherwise be one sync
+   * per keystroke.
+   *
+   * Safe to do often: sync is last-write-wins on `updatedAt` and the review
+   * log is append-only, so running it more only shrinks the window in which
+   * two devices can disagree.
+   */
+  useEffect(() => {
+    if (!userId || lastWrite === 0) return
+    if (debounceTimer.current) window.clearTimeout(debounceTimer.current)
+    debounceTimer.current = window.setTimeout(() => void runSync(), 6000)
+    return () => {
+      if (debounceTimer.current) window.clearTimeout(debounceTimer.current)
+    }
+  }, [userId, lastWrite, runSync])
 
   useEffect(() => {
     if (!settings || !online) return

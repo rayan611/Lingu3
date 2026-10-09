@@ -239,8 +239,11 @@ export function SettingsPanel({
 
           <h3>Sync</h3>
           <p className="muted small">
-            Your words are stored on this device and copied to your account in
-            the background. Reviewing never waits for the network.
+            Your words are stored on this device and copied to your account
+            automatically — a few seconds after you change something, and again
+            whenever the app goes to the background. Reviewing never waits for
+            the network, and the button below is only here for when you want to
+            be certain.
           </p>
           <p className="muted small">
             {syncing
