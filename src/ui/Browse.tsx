@@ -4,12 +4,13 @@ import { db } from '../db/db'
 import { reExpand } from '../ai/expand'
 import { isIncomplete } from '../lib/morphology'
 import { type Settings } from '../db/types'
-import { matchesTopic } from '../fsrs/queue'
+import { leechCounts, matchesTopic, LEECH_LAPSES } from '../fsrs/queue'
 import { WordCard } from './WordCard'
 
 export function Browse({ settings }: Props) {
   const [query, setQuery] = useState('')
   const [topic, setTopic] = useState<string>('all')
+  const [troubleOnly, setTroubleOnly] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -33,16 +34,45 @@ export function Browse({ settings }: Props) {
     return { bad, seen }
   }, [settings.targetLangs], { bad: new Set<string>(), seen: new Set<string>() })
 
+  /**
+   * Words you keep forgetting. FSRS reschedules a lapse but has no opinion
+   * about a card failed over and over, so without this a handful of bad words
+   * quietly dominate every session forever.
+   */
+  const leeches = useLiveQuery(() => leechCounts(), [], new Map<string, number>())
+
+  /** Concepts whose cards are all suspended, so the button can say "resume". */
+  const paused = useLiveQuery(
+    async () => {
+      const cards = await db.cards.toArray()
+      const byConcept = new Map<string, { total: number; off: number }>()
+      for (const c of cards) {
+        const row = byConcept.get(c.conceptId) ?? { total: 0, off: 0 }
+        row.total++
+        if (c.suspended) row.off++
+        byConcept.set(c.conceptId, row)
+      }
+      const out = new Set<string>()
+      for (const [id, row] of byConcept) {
+        if (row.total > 0 && row.total === row.off) out.add(id)
+      }
+      return out
+    },
+    [],
+    new Set<string>(),
+  )
+
   const concepts = useLiveQuery(async () => {
     const all = await db.concepts.orderBy('createdAt').reverse().toArray()
     const q = query.trim().toLocaleLowerCase()
     return all.filter((c) => {
       if (c.deletedAt) return false
       if (!matchesTopic(c, topic)) return false
+      if (troubleOnly && !leeches.has(c.id)) return false
       if (!q) return true
       return c.lemma.toLocaleLowerCase().includes(q)
     })
-  }, [query, topic], [])
+  }, [query, topic, troubleOnly, leeches], [])
 
   /** Every topic in use, from tags and from the old single category field. */
   const topics = useLiveQuery(
@@ -69,6 +99,22 @@ export function Browse({ settings }: Props) {
     } finally {
       setBusy(false)
     }
+  }
+
+  /**
+   * Suspending keeps every row and every bit of FSRS state; it only stops the
+   * word entering the queue. That is what you want for a word you keep
+   * failing — pause it, fix the example, bring it back — and it is also how
+   * delete works underneath, for the same replication reason.
+   */
+  async function handleSuspend(id: string) {
+    const cards = await db.cards.where('conceptId').equals(id).toArray()
+    if (cards.length === 0) return
+    const now = Date.now()
+    const anyActive = cards.some((c) => !c.suspended)
+    await db.cards.bulkPut(
+      cards.map((c) => ({ ...c, suspended: anyActive, updatedAt: now })),
+    )
   }
 
   async function handleDelete(id: string) {
@@ -112,7 +158,19 @@ export function Browse({ settings }: Props) {
             ))}
           </select>
         </div>
-        <p className="muted small">{concepts.length} words</p>
+        <div className="row">
+          <p className="muted small">{concepts.length} words</p>
+          {leeches.size > 0 && (
+            <button
+              className={`chip ${troubleOnly ? 'chip-on' : ''}`}
+              onClick={() => setTroubleOnly((v) => !v)}
+              title={`Words failed ${LEECH_LAPSES} times or more`}
+            >
+              {troubleOnly ? '✓ ' : ''}
+              {leeches.size} giving you trouble
+            </button>
+          )}
+        </div>
 
         <ul className="word-list">
           {concepts.map((c) => (
@@ -123,6 +181,13 @@ export function Browse({ settings }: Props) {
                 {!flagged.seen.has(c.id) ? (
                   <span className="badge flag" title="No translations yet">
                     not expanded
+                  </span>
+                ) : leeches.has(c.id) ? (
+                  <span
+                    className="badge flag"
+                    title={`Forgotten ${leeches.get(c.id)} times — rewrite the example, or pause it`}
+                  >
+                    trouble ×{leeches.get(c.id)}
                   </span>
                 ) : flagged.bad.has(c.id) ? (
                   <span
@@ -141,6 +206,13 @@ export function Browse({ settings }: Props) {
                   title="Ask the model again — your review schedule is kept"
                 >
                   redo
+                </button>
+                <button
+                  className="link"
+                  onClick={() => void handleSuspend(c.id)}
+                  title="Take it out of the queue but keep its history"
+                >
+                  {paused.has(c.id) ? 'resume' : 'pause'}
                 </button>
                 <button className="link danger" onClick={() => void handleDelete(c.id)}>
                   delete

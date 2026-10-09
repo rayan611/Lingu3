@@ -932,3 +932,9 @@ kbd {
 .related-word { font-size: 1.05rem; font-weight: 600; }
 .related-meaning { color: var(--ink-soft); font-size: 0.88rem; margin-top: 0.15rem; }
 .related-action { margin-top: 0.45rem; }
+
+.chip-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}

@@ -213,6 +213,42 @@ async function main() {
     }
   })
 
+  console.log('\n14. Words you keep forgetting')
+  await check('a repeatedly failed card is flagged, a merely hard one is not', async () => {
+    const { leechCounts, LEECH_LAPSES } = await import('../src/fsrs/queue')
+    const card = (await db.cards.where('conceptId').equals('concept-1').first())!
+    await db.cards.put({ ...card, lapses: LEECH_LAPSES, updatedAt: Date.now() })
+    const other = (await db.cards.where('conceptId').equals('concept-2').first())!
+    await db.cards.put({ ...other, lapses: LEECH_LAPSES - 1, updatedAt: Date.now() })
+
+    const leeches = await leechCounts()
+    if (!leeches.has('concept-1')) throw new Error('a failing word was not flagged')
+    if (leeches.has('concept-2')) throw new Error('flagged a word below the threshold')
+    if (leeches.get('concept-1') !== LEECH_LAPSES) {
+      throw new Error('the count should be the worst language, not a sum')
+    }
+  })
+  await check('suspending keeps the card and its history, and clears the queue', async () => {
+    const settings = await ensureSettings()
+    const cards = await db.cards.where('conceptId').equals('concept-1').toArray()
+    const repsBefore = cards.map((c) => c.reps)
+    await db.cards.bulkPut(
+      cards.map((c) => ({ ...c, suspended: true, updatedAt: Date.now() })),
+    )
+    const after = await db.cards.where('conceptId').equals('concept-1').toArray()
+    if (after.length !== cards.length) throw new Error('rows were removed')
+    if (after.some((c, i) => c.reps !== repsBefore[i])) {
+      throw new Error('suspending must not reset progress')
+    }
+    const queue = await buildQueue(settings)
+    if (queue.some((q) => q.concept.id === 'concept-1')) {
+      throw new Error('a suspended word still entered the queue')
+    }
+    await db.cards.bulkPut(
+      after.map((c) => ({ ...c, suspended: false, updatedAt: Date.now() })),
+    )
+  })
+
   console.log('\n13. Related words')
   await check('a related word starts its first review days later', async () => {
     // Semantically similar words learned together interfere, so a word and the

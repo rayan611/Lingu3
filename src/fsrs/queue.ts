@@ -202,6 +202,29 @@ export async function queueCounts(
   }
 }
 
+/**
+ * How many times a word may be forgotten before it is worth stopping and
+ * fixing rather than failing again.
+ *
+ * FSRS reschedules a lapse; it has no opinion about a card you keep failing
+ * forever. Anki calls these leeches and suspends them at eight. Six is a
+ * little earlier, because three bad words dominating every session is the
+ * thing this is meant to prevent and the cost of looking at one too soon is
+ * nil.
+ */
+export const LEECH_LAPSES = 6
+
+/** Lapses per concept, worst language counted — that is the one failing. */
+export async function leechCounts(): Promise<Map<string, number>> {
+  const cards = await db.cards.toArray()
+  const worst = new Map<string, number>()
+  for (const c of cards) {
+    if (c.lapses < LEECH_LAPSES) continue
+    worst.set(c.conceptId, Math.max(worst.get(c.conceptId) ?? 0, c.lapses))
+  }
+  return worst
+}
+
 export function isActive(lang: Lang, settings: Settings): boolean {
   return settings.activeLangs.includes(lang)
 }
