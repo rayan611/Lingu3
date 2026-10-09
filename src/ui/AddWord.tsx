@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import {
   commitPreview,
+  normaliseTags,
   previewWord,
   processPending,
   type WordPreview,
@@ -37,6 +38,25 @@ export function AddWord({ settings }: Props) {
    * through the code.
    */
   const [quick, setQuick] = useState(false)
+  /** The tags that will be saved — seeded by the model, edited here. */
+  const [draftTags, setDraftTags] = useState<string[]>([])
+
+  /** Topics already in use, offered as one-tap suggestions. */
+  const tagSuggestions = useLiveQuery(
+    async () => {
+      const concepts = await db.concepts.toArray()
+      const counts = new Map<string, number>()
+      for (const c of concepts) {
+        if (c.deletedAt) continue
+        for (const t of c.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1)
+      }
+      return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([t]) => t)
+    },
+    [],
+    [],
+  )
 
   const pending = useLiveQuery(
     () => db.pending.orderBy('createdAt').toArray(),
@@ -78,9 +98,11 @@ export function AddWord({ settings }: Props) {
         return
       }
 
+      const suggested = normaliseTags(result.preview.expansion.tags)
       if (quick) {
-        await save(result.preview)
+        await save(result.preview, suggested)
       } else {
+        setDraftTags(suggested)
         setPreview(result.preview)
       }
     } catch (err) {
@@ -91,12 +113,13 @@ export function AddWord({ settings }: Props) {
   }
 
   /** Writes a preview. No model call — the expansion is already on screen. */
-  async function save(toSave: WordPreview) {
+  async function save(toSave: WordPreview, tags: string[]) {
     setBusy(true)
     try {
       const result = await commitPreview({
         preview: toSave,
         category,
+        tags,
         settings,
       })
       setLastId(result.conceptId)
@@ -197,7 +220,8 @@ export function AddWord({ settings }: Props) {
             onChange={(e) => setQuick(e.target.checked)}
           />
           <span>
-            Quick add — save straight away, without showing it first
+            Quick add — save straight away with the suggested topics, without
+            showing it first
           </span>
         </label>
 
@@ -236,7 +260,10 @@ export function AddWord({ settings }: Props) {
           preview={preview}
           settings={settings}
           busy={busy}
-          onAdd={() => void save(preview)}
+          tags={draftTags}
+          onTagsChange={setDraftTags}
+          tagSuggestions={tagSuggestions}
+          onAdd={() => void save(preview, draftTags)}
         />
       )}
 

@@ -125,6 +125,12 @@ const TOOL = {
         ],
         description: 'Part of speech of the concept as a whole.',
       },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'One to three lowercase topic tags for where this word is used: everyday, food, restaurant, shopping, travel, work, home, health, school, nature, feelings, time, numbers. Invent one only when none of those fit. These are topics, not grammar — the part of speech is the field above.',
+      },
       normalisedLemma: {
         type: 'string',
         description:
@@ -202,6 +208,12 @@ the others: a literal translation produces stilted German and unidiomatic
 Swedish. The learner reads these stacked on top of each other and compares
 them, so they should be recognisably the same scene said the way each
 language actually says it.
+
+TOPICS — also return one to three lowercase topic tags saying where the word
+is used: everyday, food, restaurant, shopping, travel, work, home, health,
+school, nature, feelings, time, numbers. Invent a tag only when none of those
+fit. A word is routinely more than one thing, so more than one tag is normal.
+These are topics, not grammar — the part of speech is its own field.
 
 SENSE — pick ONE sense, the most common everyday one, and use that sense
 consistently in every language. A word with several unrelated senses should
@@ -526,6 +538,7 @@ const GEMINI_SCHEMA = {
       enum: ['noun', 'verb', 'adjective', 'adverb', 'preposition', 'phrase', 'other'],
     },
     normalisedLemma: { type: 'STRING' },
+    tags: { type: 'ARRAY', items: { type: 'STRING' } },
     entries: {
       type: 'ARRAY',
       items: {

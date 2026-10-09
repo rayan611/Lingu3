@@ -213,6 +213,51 @@ async function main() {
     }
   })
 
+  console.log('\n10. Topic tags')
+  await check('the multiEntry tags index is queryable', async () => {
+    // Index names are strings; only running the query proves the index exists.
+    // This is the same class of bug as the missing `createdAt` index.
+    await db.concepts.put({
+      id: 'tagged-1',
+      lemma: 'tagged',
+      sourceLang: 'sv',
+      pos: 'noun',
+      category: 'daily',
+      tags: ['restaurant', 'work'],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    const byTag = await db.concepts.where('tags').equals('work').toArray()
+    if (!byTag.some((c) => c.id === 'tagged-1')) {
+      throw new Error('multiEntry lookup missed a concept carrying the tag')
+    }
+    const other = await db.concepts.where('tags').equals('restaurant').toArray()
+    if (!other.some((c) => c.id === 'tagged-1')) {
+      throw new Error('a concept must be findable under each of its tags')
+    }
+  })
+  await check('topic matching honours both tags and the legacy category', async () => {
+    const { matchesTopic } = await import('../src/fsrs/queue')
+    const tagged = (await db.concepts.get('tagged-1'))!
+    const legacy = (await db.concepts.get('concept-0'))!
+    if (!matchesTopic(tagged, 'work')) throw new Error('tag not matched')
+    if (!matchesTopic(legacy, 'daily')) throw new Error('legacy category not matched')
+    if (matchesTopic(tagged, 'travel')) throw new Error('matched a topic it lacks')
+    if (!matchesTopic(tagged, 'all')) throw new Error('"all" must match everything')
+  })
+  await check('a topic filter narrows the queue without changing what is due', async () => {
+    const settings = await ensureSettings()
+    const all = await queueCounts(settings)
+    const focused = await queueCounts(settings, 'travel')
+    if (focused.total > all.total) {
+      throw new Error('a filter cannot increase the number due')
+    }
+    const queue = await buildQueue(settings, 60, 'travel')
+    if (queue.length > (await buildQueue(settings)).length) {
+      throw new Error('a filtered queue cannot be longer than the whole one')
+    }
+  })
+
   console.log('\n9. Check before adding')
   await check('a word you already have is caught before any model call', async () => {
     const { previewWord, cachedPreviewCount, clearPreviewCache } = await import(

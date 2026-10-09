@@ -669,3 +669,54 @@ kbd {
   border-style: dashed;
 }
 .preview-card .primary.big { margin-top: 1rem; width: 100%; }
+
+
+/* --- Topic tags ------------------------------------------------------------ */
+.tag-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.3rem 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--chip, #ece8e1);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.tag-remove {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  color: inherit;
+  opacity: 0.55;
+}
+.tag-remove:hover { opacity: 1; }
+.tag-add {
+  display: flex;
+  gap: 0.35rem;
+}
+.tag-add input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+}
+.pos-select {
+  font-size: 0.8rem;
+  padding: 0.1rem 0.3rem;
+  width: auto;
+}

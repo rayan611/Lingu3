@@ -8,6 +8,7 @@ import {
 } from '../db/types'
 import type { WordPreview } from '../ai/expand'
 import { genderBadge, morphLines } from '../lib/morphology'
+import { TagEditor } from './TagEditor'
 
 /**
  * What a word would look like if you saved it.
@@ -21,11 +22,17 @@ export function PreviewCard({
   settings,
   onAdd,
   busy,
+  tags,
+  onTagsChange,
+  tagSuggestions,
 }: {
   preview: WordPreview
   settings: Settings
   onAdd: () => void
   busy: boolean
+  tags: string[]
+  onTagsChange: (next: string[]) => void
+  tagSuggestions: string[]
 }) {
   const order = [settings.nativeLang, ...settings.targetLangs]
   const rows: WordPreviewEntryView[] = preview.expansion.entries
@@ -48,6 +55,15 @@ export function PreviewCard({
             Tidied from “{preview.lemma}”.
           </p>
         )}
+
+      {/* Suggested by the model, changed here if it guessed wrong, and
+          editable again later from the word card. */}
+      <TagEditor
+        tags={tags}
+        onChange={onTagsChange}
+        suggestions={tagSuggestions}
+        disabled={busy}
+      />
 
       <div className="lang-stack">
         {rows.map((entry) => {

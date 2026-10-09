@@ -3,12 +3,13 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { reExpand } from '../ai/expand'
 import { isIncomplete } from '../lib/morphology'
-import { CATEGORIES, type Category, type Settings } from '../db/types'
+import { type Settings } from '../db/types'
+import { matchesTopic } from '../fsrs/queue'
 import { WordCard } from './WordCard'
 
 export function Browse({ settings }: Props) {
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<Category | 'all'>('all')
+  const [topic, setTopic] = useState<string>('all')
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -37,11 +38,27 @@ export function Browse({ settings }: Props) {
     const q = query.trim().toLocaleLowerCase()
     return all.filter((c) => {
       if (c.deletedAt) return false
-      if (category !== 'all' && c.category !== category) return false
+      if (!matchesTopic(c, topic)) return false
       if (!q) return true
       return c.lemma.toLocaleLowerCase().includes(q)
     })
-  }, [query, category], [])
+  }, [query, topic], [])
+
+  /** Every topic in use, from tags and from the old single category field. */
+  const topics = useLiveQuery(
+    async () => {
+      const all = await db.concepts.toArray()
+      const set = new Set<string>()
+      for (const c of all) {
+        if (c.deletedAt) continue
+        if (c.category) set.add(c.category)
+        for (const t of c.tags ?? []) set.add(t)
+      }
+      return [...set].sort()
+    },
+    [],
+    [],
+  )
 
   async function handleReExpand(id: string) {
     setBusy(true)
@@ -86,14 +103,11 @@ export function Browse({ settings }: Props) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search"
           />
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as Category | 'all')}
-          >
-            <option value="all">All categories</option>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
+          <select value={topic} onChange={(e) => setTopic(e.target.value)}>
+            <option value="all">All topics</option>
+            {topics.map((t) => (
+              <option key={t} value={t}>
+                {t}
               </option>
             ))}
           </select>

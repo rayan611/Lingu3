@@ -54,6 +54,29 @@ export class LinguaDB extends Dexie {
       concepts:
         'id, lemma, sourceLang, pos, category, createdAt, updatedAt, deletedAt',
     })
+
+    // v3: topics as multi-valued tags. `*tags` is a multiEntry index, so
+    // `where('tags').equals('restaurant')` matches a concept that carries it
+    // among several — which is the whole reason for moving off a single
+    // category field.
+    //
+    // `category` is kept rather than migrated away: dropping it would strand
+    // every word added before now, and both are read when filtering.
+    this.version(3)
+      .stores({
+        concepts:
+          'id, lemma, sourceLang, pos, category, createdAt, updatedAt, deletedAt, *tags',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('concepts')
+          .toCollection()
+          .modify((c: Concept) => {
+            if (c.tags && c.tags.length > 0) return
+            c.tags =
+              c.category && c.category !== 'uncategorised' ? [c.category] : []
+          })
+      })
   }
 }
 

@@ -13,6 +13,22 @@ import {
   type Settings,
 } from '../db/types'
 
+/**
+ * Topic tags, tidied. Lowercase, trimmed, de-duplicated, and capped at four —
+ * a word tagged eight ways is tagged none.
+ */
+export function normaliseTags(raw: readonly string[] | undefined): string[] {
+  if (!raw) return []
+  const out: string[] = []
+  for (const t of raw) {
+    const tag = t.trim().toLocaleLowerCase().replace(/\s+/g, ' ').slice(0, 24)
+    if (!tag) continue
+    if (!out.includes(tag)) out.push(tag)
+    if (out.length === 4) break
+  }
+  return out
+}
+
 export class ExpansionError extends Error {
   constructor(
     message: string,
@@ -127,6 +143,12 @@ export async function applyExpansion(
       await db.concepts.put({
         ...concept,
         pos: expansion.pos as PartOfSpeech,
+        // Suggested topics only fill an empty list. A word you have already
+        // tagged yourself must not be re-tagged by the model on a redo.
+        tags:
+          concept.tags && concept.tags.length
+            ? concept.tags
+            : normaliseTags(expansion.tags),
         lemma: expansion.normalisedLemma?.trim() || concept.lemma,
         updatedAt: now,
       })
@@ -392,7 +414,9 @@ export async function commitPreview(opts: {
     sourceLang: preview.sourceLang,
     pos: preview.expansion.pos as PartOfSpeech,
     category: opts.category,
-    tags: opts.tags?.length ? opts.tags : undefined,
+    tags: opts.tags?.length
+      ? normaliseTags(opts.tags)
+      : normaliseTags(preview.expansion.tags),
     notes: preview.hint,
     createdAt: now,
     updatedAt: now,

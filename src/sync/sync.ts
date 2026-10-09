@@ -46,6 +46,7 @@ const conceptOut = (c: Concept, userId: string): Row => ({
   source_lang: c.sourceLang,
   pos: c.pos,
   category: c.category,
+  tags: c.tags ?? [],
   notes: c.notes ?? null,
   created_at: iso(c.createdAt),
   updated_at: iso(c.updatedAt),
@@ -58,6 +59,9 @@ const conceptIn = (r: Row): Concept => ({
   sourceLang: r.source_lang as Lang,
   pos: r.pos as Concept['pos'],
   category: r.category as Concept['category'],
+  // Postgres gives back an empty array rather than null; an empty tag list and
+  // no tag list mean the same thing here, so both normalise to undefined.
+  tags: Array.isArray(r.tags) && r.tags.length ? (r.tags as string[]) : undefined,
   notes: (r.notes as string) ?? undefined,
   createdAt: ms(r.created_at as string),
   updatedAt: ms(r.updated_at as string),

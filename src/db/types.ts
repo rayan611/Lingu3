@@ -329,6 +329,8 @@ export const ExpansionEntrySchema = z.object({
 
 export const ExpansionSchema = z.object({
   pos: z.enum(PARTS_OF_SPEECH),
+  /** Suggested topics. Advisory — the user can change them before saving. */
+  tags: z.array(z.string().min(1).max(24)).max(4).optional(),
   /** The model may correct a typo or strip an article; we show this to the user. */
   normalisedLemma: z.string().optional(),
   entries: z.array(ExpansionEntrySchema).min(1),
