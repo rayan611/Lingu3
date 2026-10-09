@@ -190,14 +190,38 @@ p { margin: 0.4rem 0; }
   font-weight: 500;
 }
 /* Two rows of three on a phone: every tab reachable with a thumb and none of
-   them off the edge. */
+   them off the edge. The icon moves above the label rather than beside it, so
+   both still fit across a third of a narrow screen.
+
+   The label always stays. An icon-only tab bar makes you learn six glyphs to
+   use the app, and the icons here are a plus sign and some geometry — they
+   label nothing on their own. */
 @media (max-width: 560px) {
   .tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-radius: 18px; }
-  .tab { justify-content: center; padding: 9px 6px; gap: 5px; font-size: 0.84rem; }
+  .tab {
+    flex-direction: column;
+    justify-content: center;
+    padding: 8px 4px;
+    gap: 4px;
+    font-size: 0.78rem;
+  }
+  .tab-icon { width: 26px; height: 26px; font-size: 0.9rem; }
+  .tab-label { line-height: 1.1; }
+  /* The due count would push the column out of line, so it rides on the icon
+     instead of sitting after the label. */
+  .tab { position: relative; }
+  .tab .tab-badge {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    margin-left: 4px;
+    font-size: 0.64rem;
+    padding: 0 5px;
+  }
 }
-@media (max-width: 380px) {
-  .tab-label { display: none; }
-  .tab-icon { width: 28px; height: 28px; font-size: 0.95rem; }
+@media (max-width: 340px) {
+  .tab { font-size: 0.72rem; }
+  .tab-icon { width: 22px; height: 22px; font-size: 0.8rem; }
 }
 
 /* Below this width the greeting is the first thing to go: the mark says which
