@@ -15,6 +15,7 @@ import { db, openForUser, ensureSettings, compositeId, newId } from '../src/db/d
 import { makeCard } from '../src/fsrs/scheduler'
 import { buildQueue, queueCounts } from '../src/fsrs/queue'
 import type { Concept, Entry, Lang, ReviewLogRow } from '../src/db/types'
+import { detectLang } from '../src/lib/detectLang'
 
 let failures = 0
 async function check(label: string, run: () => Promise<unknown>) {
@@ -706,6 +707,40 @@ async function main() {
     if (cards !== 3) throw new Error(`expected 3 cards, got ${cards}`)
     const concept = await db.concepts.get(result.conceptId)
     if (concept?.pos !== 'noun') throw new Error('pos from the expansion was not kept')
+  })
+
+  console.log('\nLanguage detection on the Add box')
+  // A suggestion, so a miss (no guess) is cheap and a confident wrong answer
+  // is not. These pin the second kind.
+  const guesses: [string, Lang | null][] = [
+    ['собака', 'ru'],
+    ['писать', 'ru'],
+    ['سگ', 'fa'],
+    ['کتاب', 'fa'],
+    ['förälder', 'sv'],
+    ['sjuksköterska', 'sv'],
+    ['Entschuldigung', 'de'],
+    ['straße', 'de'],
+    ['canción', 'es'],
+    ['thought', 'en'],
+    // Deliberate misses: too short, no letters, nothing distinguishing.
+    ['a', null],
+    ['42', null],
+    ['bank', null],
+  ]
+  for (const [word, want] of guesses) {
+    await check(`"${word}" -> ${want ?? 'no guess'}`, async () => {
+      const got = detectLang(word)?.lang ?? null
+      if (got !== want) throw new Error(`got ${got ?? 'no guess'}`)
+    })
+  }
+  await check('a decisive script is certain, a Latin guess only likely', async () => {
+    if (detectLang('собака')?.confidence !== 'certain') {
+      throw new Error('Cyrillic should be certain')
+    }
+    if (detectLang('Entschuldigung')?.confidence !== 'likely') {
+      throw new Error('a Latin-script guess should never claim certainty')
+    }
   })
 
   console.log(

@@ -25,6 +25,7 @@ import { SettingsPanel } from './ui/SettingsPanel'
 import { InstallButton } from './ui/InstallButton'
 import { NamePrompt } from './ui/NamePrompt'
 import { Logo } from './ui/Logo'
+import { Landing, shouldShowLanding } from './ui/Landing'
 import { applyTheme, readTheme } from './lib/theme'
 
 /**
@@ -44,6 +45,9 @@ export function App() {
 
   const [dbReady, setDbReady] = useState(false)
   const [dbKey, setDbKey] = useState('local')
+  // Read once, not on every render: it must not flip to the landing page
+  // underneath someone who is already using the app.
+  const [showLanding, setShowLanding] = useState(shouldShowLanding)
 
   // Point Dexie at this user's store before rendering anything that queries it.
   useEffect(() => {
@@ -69,6 +73,12 @@ export function App() {
 
   if (session === undefined) {
     return <div className="boot">Checking your session…</div>
+  }
+
+  // The front door, for a first visit in a browser. Someone already signed in
+  // has plainly been here before, so they go straight through.
+  if (showLanding && !session) {
+    return <Landing onOpen={() => setShowLanding(false)} />
   }
 
   if (authConfigured && !session) {

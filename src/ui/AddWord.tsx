@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import {
@@ -19,6 +19,7 @@ import {
 import { WordCard } from './WordCard'
 import { BulkAdd } from './BulkAdd'
 import { PreviewCard } from './PreviewCard'
+import { detectLang } from '../lib/detectLang'
 import { RelatedWords } from './RelatedWords'
 
 interface Props {
@@ -29,6 +30,18 @@ export function AddWord({ settings }: Props) {
   const [lemma, setLemma] = useState('')
   const [hint, setHint] = useState('')
   const [sourceLang, setSourceLang] = useState<Lang>(settings.nativeLang)
+  /**
+   * The language the typed text looks like. Offered, never applied: a silent
+   * wrong guess files a German noun as Swedish and you find out weeks later
+   * when the genders make no sense. One tap accepts it.
+   */
+  const guess = useMemo(() => {
+    const g = detectLang(lemma)
+    if (!g || g.lang === sourceLang) return null
+    // Only languages this user actually has configured.
+    const known = [settings.nativeLang, ...settings.targetLangs]
+    return known.includes(g.lang) ? g : null
+  }, [lemma, sourceLang, settings.nativeLang, settings.targetLangs])
   const [category, setCategory] = useState<Category>('daily')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ kind: string; text: string } | null>(null)
@@ -190,6 +203,16 @@ export function AddWord({ settings }: Props) {
                 </option>
               ))}
             </select>
+            {guess && (
+              <button
+                type="button"
+                className="link lang-guess"
+                onClick={() => setSourceLang(guess.lang)}
+              >
+                {guess.confidence === 'certain' ? 'That is' : 'Looks like'}{' '}
+                {LANG_NAMES[guess.lang]} — switch
+              </button>
+            )}
           </label>
 
           <label className="field">

@@ -1067,3 +1067,40 @@ kbd {
   gap: 12px;
 }
 .panel-head h2 { margin: 0; }
+
+/* --- landing --------------------------------------------------------------
+   The page a first-time visitor lands on in a browser. Not a separate route:
+   the service worker's navigateFallback sends every path to index.html, so a
+   second HTML file would either be shadowed by the shell or have to be carved
+   out of the fallback, and both are ways to break offline boot for a page
+   that is shown once. */
+.landing {
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: 18vh 1.25rem 4rem;
+  text-align: center;
+}
+.landing-mark { margin-bottom: 20px; }
+.landing-mark .logo { margin: 0 auto; }
+.landing h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 2.1rem;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+}
+.landing-pitch {
+  color: var(--ink-soft);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+.landing .primary.big { margin-top: 14px; }
+.landing-note { margin-top: 18px; }
+
+/* The detected-language nudge under the Add form's dropdown. A link rather
+   than a button: it is an offer, and accepting it is one tap. */
+.lang-guess {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 0.78rem;
+}
