@@ -1,6 +1,6 @@
 import { db, getMeta, setMeta } from '../db/db'
 import { supabase } from '../auth/supabase'
-import { DEFAULT_SETTINGS, type Card, type Concept, type Entry, type Lang, type ReviewLogRow, type Settings } from '../db/types'
+import { DEFAULT_SETTINGS, type Card, type Concept, type Entry, type Lang, type ReviewLogRow, type Settings, type Story } from '../db/types'
 
 /**
  * Last-write-wins sync against Supabase.
@@ -132,6 +132,39 @@ const cardIn = (r: Row): Card => ({
   updatedAt: ms(r.updated_at as string),
 })
 
+const storyOut = (s: Story, userId: string): Row => ({
+  id: s.id,
+  user_id: userId,
+  title: s.title,
+  body: s.body,
+  lang: s.lang,
+  genre: s.genre,
+  topics: s.topics ?? [],
+  word_count: s.wordCount,
+  known_count: s.knownCount,
+  unknown_words: s.unknownWords ?? [],
+  glossary: s.glossary ?? null,
+  created_at: iso(s.createdAt),
+  updated_at: iso(s.updatedAt),
+  deleted_at: s.deletedAt ? iso(s.deletedAt) : null,
+})
+
+const storyIn = (r: Row): Story => ({
+  id: r.id as string,
+  title: (r.title as string) ?? '',
+  body: (r.body as string) ?? '',
+  lang: r.lang as Lang,
+  genre: (r.genre as string) ?? 'fun',
+  topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
+  wordCount: Number(r.word_count ?? 0),
+  knownCount: Number(r.known_count ?? 0),
+  unknownWords: Array.isArray(r.unknown_words) ? (r.unknown_words as string[]) : [],
+  glossary: (r.glossary as Story['glossary']) ?? undefined,
+  createdAt: ms(r.created_at as string),
+  updatedAt: ms(r.updated_at as string),
+  deletedAt: r.deleted_at ? ms(r.deleted_at as string) : undefined,
+})
+
 const logOut = (l: ReviewLogRow, userId: string): Row => ({
   id: l.id,
   user_id: userId,
@@ -211,6 +244,15 @@ async function push(userId: string): Promise<number> {
     count += cards.length
   }
 
+  const stories = await db.stories.filter((s) => s.updatedAt > from).toArray()
+  if (stories.length) {
+    const { error } = await sb
+      .from('stories')
+      .upsert(stories.map((s) => storyOut(s, userId)))
+    if (error) throw new Error(`stories: ${error.message}`)
+    count += stories.length
+  }
+
   // Append-only: push by reviewedAt, ignore duplicates rather than updating.
   const logSince = Number(await getMeta(CURSOR_LOG)) || 0
   const logs = await db.reviewLog
@@ -278,6 +320,14 @@ async function pull(userId: string): Promise<number> {
     .gt('updated_at', from)
   if (kErr) throw new Error(`cards: ${kErr.message}`)
   count += await mergeInto(db.cards, (cards ?? []).map(cardIn))
+
+  const { data: stories, error: sErr } = await sb
+    .from('stories')
+    .select('*')
+    .eq('user_id', userId)
+    .gt('updated_at', from)
+  if (sErr) throw new Error(`stories: ${sErr.message}`)
+  count += await mergeInto(db.stories, (stories ?? []).map(storyIn))
 
   const { data: remoteSettings } = await sb
     .from('user_settings')

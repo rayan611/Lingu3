@@ -213,6 +213,104 @@ async function main() {
     }
   })
 
+  console.log('\n17. Reading')
+  await check('the stories store is queryable and sorts by createdAt', async () => {
+    // Same lesson as the missing concepts.createdAt index: sorting on an
+    // unindexed key throws, and only running the query proves it is there.
+    const now = Date.now()
+    await db.stories.put({
+      id: 'story-1',
+      title: 'En dag i Finspång',
+      body: 'Hunden springer. Jag dricker kaffe.',
+      lang: 'sv',
+      genre: 'fun',
+      topics: ['daily'],
+      wordCount: 6,
+      knownCount: 5,
+      unknownWords: ['dricker'],
+      createdAt: now,
+      updatedAt: now,
+    })
+    const rows = await db.stories.orderBy('createdAt').reverse().toArray()
+    if (!rows.some((s) => s.id === 'story-1')) throw new Error('story not found')
+    const byLang = await db.stories.where('lang').equals('sv').toArray()
+    if (byLang.length === 0) throw new Error('lang index missing')
+  })
+  await check('deleting a story is soft, so a resync cannot resurrect it', async () => {
+    const { deleteStory } = await import('../src/ai/story')
+    await deleteStory('story-1')
+    const row = await db.stories.get('story-1')
+    if (!row) throw new Error('the row was hard deleted')
+    if (!row.deletedAt) throw new Error('deletedAt was not set')
+    if (row.updatedAt <= 0) throw new Error('updatedAt must move so the delete replicates')
+  })
+  await check('tokenising handles Latin and Cyrillic and drops punctuation', async () => {
+    const { tokenise } = await import('../src/ai/story')
+    const latin = tokenise('Hunden springer, och jag dricker kaffe!')
+    if (latin.length !== 6) throw new Error(`expected 6 words, got ${latin.join('|')}`)
+    if (latin.includes('kaffe!')) throw new Error('punctuation was kept')
+    const cyrillic = tokenise('Собака бежит, я пью кофе.')
+    if (cyrillic.length !== 5) throw new Error(`cyrillic split wrong: ${cyrillic.join('|')}`)
+  })
+  await check('coverage is measured against the vocabulary, not reported by the model', async () => {
+    const { measureCoverage } = await import('../src/ai/story')
+    const known = new Set(['hunden', 'springer', 'jag', 'kaffe'])
+    const cov = measureCoverage('Hunden springer. Jag dricker kaffe.', known)
+    if (cov.total !== 5) throw new Error(`expected 5 tokens, got ${cov.total}`)
+    if (cov.known !== 4) throw new Error(`expected 4 known, got ${cov.known}`)
+    if (cov.unknown.join() !== 'dricker') {
+      throw new Error(`unknown words wrong: ${cov.unknown.join()}`)
+    }
+    if (Math.round(cov.ratio * 100) !== 80) throw new Error('ratio wrong')
+  })
+  await check('inflected forms from the morphology tables count as known', async () => {
+    // Without this a text scores as full of unknown words purely for being
+    // written in sentences rather than dictionary entries.
+    const { collectVocabulary, measureCoverage } = await import('../src/ai/story')
+    const id = 'story-vocab'
+    const now = Date.now()
+    await db.concepts.put({
+      id,
+      lemma: 'hund',
+      sourceLang: 'sv',
+      pos: 'noun',
+      category: 'daily',
+      createdAt: now,
+      updatedAt: now,
+    })
+    await db.entries.put({
+      id: compositeId(id, 'sv'),
+      conceptId: id,
+      lang: 'sv',
+      headword: 'en hund',
+      meaning: 'dog',
+      morphology: {
+        kind: 'noun',
+        gender: 'en',
+        definiteSingular: 'hunden',
+        indefinitePlural: 'hundar',
+      },
+      updatedAt: now,
+    })
+    const vocab = await collectVocabulary('sv', [])
+    if (!vocab.headwords.includes('hund')) {
+      throw new Error('the article should be stripped from the headword')
+    }
+    if (!vocab.known.has('hunden') || !vocab.known.has('hundar')) {
+      throw new Error('inflected forms were not counted as known')
+    }
+    const cov = measureCoverage('hundar', vocab.known)
+    if (cov.known !== 1) throw new Error('a plural should count as the word you know')
+  })
+  await check('a topic filter narrows the vocabulary a text is built from', async () => {
+    const { collectVocabulary } = await import('../src/ai/story')
+    const all = await collectVocabulary('sv', [])
+    const narrowed = await collectVocabulary('sv', ['nothing-is-tagged-this'])
+    if (narrowed.headwords.length >= all.headwords.length) {
+      throw new Error('filtering by an unused topic should leave nothing')
+    }
+  })
+
   console.log('\n16. CSV import and export')
   await check('quoted fields, embedded commas and doubled quotes survive', async () => {
     const { parseDelimited } = await import('../src/lib/csv')

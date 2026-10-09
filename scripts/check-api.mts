@@ -128,6 +128,78 @@ const anthropic = readAnthropic({
 }) as { pos?: string }
 check('anthropic: the tool call is unwrapped', anthropic?.pos === 'noun', JSON.stringify(anthropic))
 
+// ---------------------------------------------------------------------------
+// The story endpoint, through the same two conventions.
+//
+// It is a second function on the same platform, so it can fail in exactly the
+// way the first one did. The plumbing is now shared (api/_http.ts) — this
+// proves the sharing actually works rather than assuming it.
+// ---------------------------------------------------------------------------
+
+const { default: storyHandler } = await import('../api/story')
+
+const storyPayload = {
+  lang: 'sv',
+  nativeLang: 'fa',
+  words: ['hund', 'springa', 'kaffe', 'morgon', 'stad', 'arbeta'],
+  genre: 'fun',
+  length: 'short',
+  unknownShare: 0.05,
+}
+
+async function storyAsWeb(method: string, headers: Record<string, string>, body?: unknown) {
+  const res = (await storyHandler(
+    new Request('https://x/api/story', {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+  )) as Response
+  return { status: res.status, text: await res.text() }
+}
+
+async function storyAsNode(method: string, headers: Record<string, string>, body?: unknown) {
+  let text = ''
+  const res = {
+    statusCode: 0,
+    setHeader: () => {},
+    end: (b?: string) => {
+      text = b ?? ''
+    },
+  }
+  await storyHandler({ method, url: '/api/story', headers, body } as never, res as never)
+  return { status: res.statusCode, text }
+}
+
+console.log('\nThe story endpoint answers under both calling conventions')
+
+for (const [name, call] of [
+  ['web', storyAsWeb],
+  ['node', storyAsNode],
+] as const) {
+  const get = await call('GET', {})
+  check(
+    `${name}: GET is refused with JSON, not a hang`,
+    get.status === 405 && isJson(get.text),
+    `${get.status} ${get.text.slice(0, 80)}`,
+  )
+
+  const noAuth = await call('POST', { 'content-type': 'application/json' }, storyPayload)
+  check(
+    `${name}: POST is rejected without a session`,
+    noAuth.status === 401 && isJson(noAuth.text),
+    `${noAuth.status} ${noAuth.text.slice(0, 80)}`,
+  )
+
+  const bad = await call('POST', { 'content-type': 'application/json' }, undefined)
+  check(
+    `${name}: a malformed body is a clean error, not a crash`,
+    bad.status >= 400 && isJson(bad.text),
+    `${bad.status} ${bad.text.slice(0, 80)}`,
+  )
+}
+
+
 if (failures > 0) {
   console.log(`\n${failures} check(s) failed.`)
   process.exit(1)

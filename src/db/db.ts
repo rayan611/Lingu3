@@ -7,6 +7,7 @@ import {
   type PendingExpansion,
   type ReviewLogRow,
   type Settings,
+  type Story,
 } from './types'
 
 /** Sync cursors and other bookkeeping. One row per key. */
@@ -30,6 +31,7 @@ export class LinguaDB extends Dexie {
   cards!: Table<Card, string>
   reviewLog!: Table<ReviewLogRow, string>
   pending!: Table<PendingExpansion, string>
+  stories!: Table<Story, string>
   settings!: Table<Settings, string>
   meta!: Table<MetaRow, string>
 
@@ -77,6 +79,13 @@ export class LinguaDB extends Dexie {
               c.category && c.category !== 'uncategorised' ? [c.category] : []
           })
       })
+
+    // v4: saved texts. A new store, so nothing existing is touched.
+    // `createdAt` is indexed because the list sorts on it — the same thing
+    // that broke every word list once already.
+    this.version(4).stores({
+      stories: 'id, lang, createdAt, updatedAt, deletedAt',
+    })
   }
 }
 

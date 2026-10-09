@@ -335,6 +335,38 @@ export interface ReviewLogRow {
   reviewedAt: number
 }
 
+/**
+ * A text generated from words you already know.
+ *
+ * `knownCount` and `wordCount` are stored rather than recomputed on read: they
+ * are a fact about the moment the text was written, and the vocabulary moves
+ * underneath. A text that was 90% familiar in October should still say 90% in
+ * December, not quietly improve.
+ */
+export interface Story {
+  id: string
+  title: string
+  body: string
+  lang: Lang
+  genre: string
+  topics: string[]
+  wordCount: number
+  knownCount: number
+  unknownWords: string[]
+  glossary?: { word: string; meaning: string }[]
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number
+}
+
+export const STORY_GENRES = [
+  { id: 'fun', label: 'Everyday, light' },
+  { id: 'fact', label: 'A true fact' },
+  { id: 'social', label: 'A social situation' },
+  { id: 'dialogue', label: 'A short dialogue' },
+  { id: 'joke', label: 'A joke' },
+] as const
+
 /** A word added while offline, waiting for expansion. */
 export interface PendingExpansion {
   id: string

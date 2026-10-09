@@ -23,6 +23,14 @@
  * normalised to the same shape before they leave this file, and the database,
  * the scheduler and the review screen see identical entries either way.
  */
+import {
+  authConfigured,
+  callerId,
+  json,
+  makeHandler,
+  makeLimiter,
+} from './_http'
+
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const PROVIDER: 'gemini' | 'anthropic' = GEMINI_KEY ? 'gemini' : 'anthropic'
@@ -283,157 +291,12 @@ Call the record_word tool. Do not write anything outside the tool call.`
 }
 
 /**
- * ---------------------------------------------------------------------------
- * Who is allowed to call this
- * ---------------------------------------------------------------------------
- *
- * The site is public, so without a check this endpoint is a free Claude proxy
- * for anyone who finds it, billed to us. The check is the Supabase access
- * token the app already holds: the caller sends it, we ask Supabase whose it
- * is, and we refuse if the answer is nobody.
- *
- * A shared secret would have been easier and worthless — a secret shipped in a
- * public browser bundle is readable by whoever reads the bundle. A token is
- * per-person, expires on its own, and costs no new environment variables,
- * since the Supabase URL and publishable key are already configured here.
- *
- * If Supabase is not configured at all (local development), the check is
- * skipped rather than locking the endpoint shut.
+ * 80/hour is far above real use — a heavy session is thirty words — and far
+ * below anything that costs real money.
  */
-const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY =
-  process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
+const overLimit = makeLimiter(80)
 
-const authConfigured = Boolean(SUPABASE_URL && SUPABASE_KEY)
-
-async function callerId(req: Request): Promise<string | null> {
-  const header = req.headers.get('authorization') ?? ''
-  const token = header.toLowerCase().startsWith('bearer ')
-    ? header.slice(7).trim()
-    : ''
-  if (!token) return null
-
-  try {
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-      headers: { apikey: SUPABASE_KEY as string, authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) return null
-    const user = (await res.json()) as { id?: string }
-    return user.id ?? null
-  } catch {
-    return null
-  }
-}
-
-/**
- * A ceiling on how much one account can spend in an hour. This is per server
- * instance rather than global, so it is a brake and not a guarantee — the
- * guarantee is the spend cap in the Anthropic console, which lives outside
- * this code. 80/hour is far above real use (a heavy session is 30 words) and
- * far below anything that would cost real money.
- */
-const HOURLY_LIMIT = 80
-const WINDOW_MS = 60 * 60 * 1000
-const recent = new Map<string, number[]>()
-
-function overLimit(userId: string): boolean {
-  const now = Date.now()
-  const hits = (recent.get(userId) ?? []).filter((t) => now - t < WINDOW_MS)
-  hits.push(now)
-  recent.set(userId, hits)
-  return hits.length > HOURLY_LIMIT
-}
-
-/**
- * ---------------------------------------------------------------------------
- * Two calling conventions, one function
- * ---------------------------------------------------------------------------
- *
- * This is why nothing worked. Vercel can invoke a Node function either with
- * web objects (Request in, Response out) or with the older Node pair
- * (req, res) — and this project gets the older one. A handler written for the
- * web signature does not fail loudly under it; it fails in two confusing ways:
- *
- *   - returning a Response writes nothing to `res`, so the request simply
- *     hangs until the gateway gives up — that was the 504, and the reason
- *     opening /api/expand in a browser showed a blank page
- *   - `req.json()` and `req.headers.get()` do not exist on a Node request, so
- *     the first one called throws, and Vercel answers with its own HTML error
- *     page — that was the 500, with no JSON body for the app to read, which is
- *     why the queue could only show the bare status number
- *
- * So the entry point now detects which it was handed, and the real work stays
- * in `respond`, written once against web objects.
- */
-type NodeResponse = {
-  statusCode: number
-  setHeader: (k: string, v: string) => void
-  end: (body?: string) => void
-}
-
-type NodeRequest = {
-  method?: string
-  url?: string
-  headers: Record<string, string | string[] | undefined>
-  body?: unknown
-}
-
-export default async function handler(
-  req: Request | NodeRequest,
-  res?: NodeResponse,
-): Promise<Response | void> {
-  // Web signature: nothing to translate.
-  if (!res || typeof res.setHeader !== 'function') {
-    return guarded(req as Request)
-  }
-
-  // Node signature: build a Request, run the same code, write the Response out.
-  const response = await guarded(toWebRequest(req as NodeRequest))
-  res.statusCode = response.status
-  response.headers.forEach((value, key) => res.setHeader(key, value))
-  res.end(await response.text())
-}
-
-function toWebRequest(req: NodeRequest): Request {
-  const headers = new Headers()
-  for (const [key, value] of Object.entries(req.headers ?? {})) {
-    if (typeof value === 'string') headers.set(key, value)
-    else if (Array.isArray(value)) headers.set(key, value.join(', '))
-  }
-
-  // Vercel has already parsed a JSON body into req.body by this point, so it
-  // is re-serialised rather than read from the stream, which is consumed.
-  const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
-  return new Request(`https://local${req.url ?? '/api/expand'}`, {
-    method: req.method ?? 'GET',
-    headers,
-    body: hasBody ? rawBody(req.body) : undefined,
-  })
-}
-
-/** The body as text, whether the platform parsed it for us or did not. */
-function rawBody(body: unknown): string | undefined {
-  if (body === undefined || body === null) return undefined
-  if (typeof body === 'string') return body
-  if (body instanceof Uint8Array) return new TextDecoder().decode(body)
-  return JSON.stringify(body)
-}
-
-/**
- * Nothing thrown in here should ever reach the platform's error page: an HTML
- * 500 is unreadable to the app, which can only report the status number. Any
- * failure comes back as our own JSON so the queue can show what happened.
- */
-async function guarded(req: Request): Promise<Response> {
-  try {
-    return await respond(req)
-  } catch (err) {
-    return json(
-      { error: `Expansion crashed: ${err instanceof Error ? err.message : String(err)}` },
-      500,
-    )
-  }
-}
+export default makeHandler(respond, '/api/expand')
 
 async function respond(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
@@ -691,11 +554,4 @@ export function readGemini(data: unknown): unknown {
     }
   }
   return parsed
-}
-
-function json(payload: unknown, status: number): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
 }

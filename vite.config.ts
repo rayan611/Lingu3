@@ -53,9 +53,9 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
-            // Never cache expansion calls — they must hit the network or fail
+            // Never cache model calls — they must hit the network or fail
             // into the pending queue.
-            urlPattern: /\/api\/expand/,
+            urlPattern: /\/api\//,
             handler: 'NetworkOnly',
           },
         ],

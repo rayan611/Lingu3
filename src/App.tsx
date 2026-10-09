@@ -13,12 +13,20 @@ import { Review } from './ui/Review'
 import { Browse } from './ui/Browse'
 import { Training } from './ui/Training'
 import { Profile } from './ui/Profile'
+import { StoryMode } from './ui/StoryMode'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { InstallButton } from './ui/InstallButton'
 import { NamePrompt } from './ui/NamePrompt'
 import { applyTheme, readTheme } from './lib/theme'
 
-type Tab = 'review' | 'training' | 'add' | 'browse' | 'profile' | 'settings'
+type Tab =
+  | 'review'
+  | 'training'
+  | 'read'
+  | 'add'
+  | 'browse'
+  | 'profile'
+  | 'settings'
 
 export function App() {
   const { session, userId, email } = useSession()
@@ -219,6 +227,9 @@ function Workspace({
         <TabButton id="training" tab={tab} set={setTab}>
           Training
         </TabButton>
+        <TabButton id="read" tab={tab} set={setTab}>
+          Reading
+        </TabButton>
         <TabButton id="add" tab={tab} set={setTab}>
           Add
         </TabButton>
@@ -262,6 +273,7 @@ function Workspace({
           <ReviewTab settings={settings} onExit={() => setTab('add')} />
         )}
         {tab === 'training' && <Training settings={settings} />}
+        {tab === 'read' && <StoryMode settings={settings} />}
         {tab === 'add' && <AddWord settings={settings} />}
         {tab === 'browse' && <Browse settings={settings} />}
         {tab === 'profile' && <Profile settings={settings} email={email} />}

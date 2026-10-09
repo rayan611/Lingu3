@@ -963,3 +963,41 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+/* --- Reading ---------------------------------------------------------------- */
+.story-body {
+  font-size: 1.1rem;
+  line-height: 1.85;
+  margin: 0.75rem 0;
+}
+.story-para { display: block; margin-bottom: 0.75rem; }
+.story-word {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.story-word:hover { background: var(--accent-soft); }
+/* Words you have not studied, marked rather than hidden: knowing which ones
+   they are is half the value of reading this. */
+.story-word.is-new {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--warn);
+}
+.story-lookup {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
