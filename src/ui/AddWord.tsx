@@ -10,6 +10,7 @@ import {
   type Settings,
 } from '../db/types'
 import { WordCard } from './WordCard'
+import { BulkAdd } from './BulkAdd'
 
 interface Props {
   settings: Settings
@@ -177,6 +178,8 @@ export function AddWord({ settings }: Props) {
           </div>
         </div>
       )}
+
+      <BulkAdd settings={settings} />
 
       {lastId && <WordCard conceptId={lastId} settings={settings} />}
 

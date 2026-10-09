@@ -265,6 +265,106 @@ export async function addWord(opts: {
   }
 }
 
+export interface BulkLine {
+  lemma: string
+  hint?: string
+}
+
+export interface BulkAddResult {
+  queued: number
+  duplicates: { lemma: string; existing: string }[]
+  skipped: number
+}
+
+/**
+ * Parses a pasted list into lines. One word per line; anything after a comma,
+ * a semicolon, a dash or a tab on the same line is taken as the sense hint,
+ * which is how a word list copied out of a notebook usually looks.
+ */
+export function parseBulkInput(text: string): BulkLine[] {
+  const out: BulkLine[] = []
+  const seen = new Set<string>()
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+    const m = line.match(/^(.*?)\s*(?:,|;|\t|\s[-–—]\s)\s*(.+)$/)
+    const lemma = (m ? m[1] : line).trim()
+    const hint = m ? m[2].trim() : undefined
+    if (!lemma) continue
+    const key = lemma.toLocaleLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ lemma, hint })
+  }
+  return out
+}
+
+/**
+ * Adds many words at once.
+ *
+ * Nothing is expanded here. Every word is written as a concept plus a pending
+ * row, and the existing offline queue does the expanding — which is the whole
+ * point: that queue already handles rate limits, retries and going offline
+ * halfway through, and a second pipeline would have to learn all of it again.
+ *
+ * Thirty words from a class is thirty round trips one at a time. This is the
+ * difference between an evening and a minute.
+ */
+export async function addWordsBulk(opts: {
+  lines: BulkLine[]
+  sourceLang: Lang
+  category: Category
+  tags?: string[]
+}): Promise<BulkAddResult> {
+  const duplicates: BulkAddResult['duplicates'] = []
+  let queued = 0
+  let skipped = 0
+
+  for (const line of opts.lines) {
+    const lemma = line.lemma.trim()
+    if (!lemma) {
+      skipped++
+      continue
+    }
+    if (lemma.length > 120) {
+      skipped++
+      continue
+    }
+
+    // Dedupe per line, and against words added earlier in this same paste —
+    // findExisting reads the database, which the previous iteration has
+    // already written to.
+    const existing = await findExisting(lemma, opts.sourceLang)
+    if (existing) {
+      duplicates.push({ lemma, existing: existing.lemma })
+      continue
+    }
+
+    const now = Date.now()
+    const concept: Concept = {
+      id: newId(),
+      lemma,
+      sourceLang: opts.sourceLang,
+      pos: 'other',
+      category: opts.category,
+      tags: opts.tags?.length ? opts.tags : undefined,
+      notes: line.hint,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await db.concepts.add(concept)
+    await db.pending.put({
+      id: newId(),
+      conceptId: concept.id,
+      attempts: 0,
+      createdAt: now,
+    })
+    queued++
+  }
+
+  return { queued, duplicates, skipped }
+}
+
 /**
  * Drains the pending queue. Called on startup and whenever the browser comes
  * back online. Sequential on purpose — a burst of parallel calls after a day
@@ -297,6 +397,10 @@ export async function processPending(
       })
       await applyExpansion(concept.id, expansion, settings)
       done++
+      // A short gap between calls. The endpoint allows 80 an hour; a pasted
+      // list of fifty would otherwise arrive as fifty requests in two seconds,
+      // which is the shape of traffic rate limiters exist to stop.
+      if (i < queue.length - 1) await sleep(250)
     } catch (err) {
       failed++
       const retryable = err instanceof ExpansionError ? err.retryable : true
@@ -319,6 +423,8 @@ export async function processPending(
 
   return { done, failed }
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Re-runs expansion for a word that came out wrong, keeping its schedule. */
 export async function reExpand(

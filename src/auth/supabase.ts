@@ -6,8 +6,14 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
  * signed-in person can read and write is decided by the database, not by this
  * key. Never put the service-role key here.
  */
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+/**
+ * Read through a guard: the check scripts import this module's dependents
+ * under plain Node, where `import.meta.env` does not exist at all. Reaching
+ * straight through it threw on import and took three unrelated checks with it.
+ */
+const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {}
+const url = env.VITE_SUPABASE_URL
+const key = env.VITE_SUPABASE_ANON_KEY
 
 /** True when the app was built with Supabase credentials. */
 export const authConfigured = Boolean(url && key)

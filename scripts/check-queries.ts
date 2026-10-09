@@ -170,6 +170,49 @@ async function main() {
     await db.cards.delete(compositeId('concept-0', unknown))
   })
 
+  console.log('\n8. Bulk add')
+  await check('a pasted list parses into lemma + hint', async () => {
+    const { parseBulkInput } = await import('../src/ai/expand')
+    const lines = parseBulkInput('hund\n\nspringa, to run\n  bank - the river kind  \nhund\n')
+    if (lines.length !== 3) throw new Error(`expected 3 lines, got ${lines.length}`)
+    if (lines[1].lemma !== 'springa' || lines[1].hint !== 'to run') {
+      throw new Error(`bad split: ${JSON.stringify(lines[1])}`)
+    }
+    if (lines[2].hint !== 'the river kind') {
+      throw new Error(`dash hint not read: ${JSON.stringify(lines[2])}`)
+    }
+  })
+  await check('bulk add queues concepts without expanding them', async () => {
+    const { addWordsBulk } = await import('../src/ai/expand')
+    const before = await db.pending.count()
+    const res = await addWordsBulk({
+      lines: [{ lemma: 'bulk-alpha' }, { lemma: 'bulk-beta', hint: 'a sense' }],
+      sourceLang: 'sv',
+      category: 'daily',
+    })
+    if (res.queued !== 2) throw new Error(`expected 2 queued, got ${res.queued}`)
+    if ((await db.pending.count()) !== before + 2) {
+      throw new Error('pending rows were not written')
+    }
+    // No cards yet: expansion has not run, so nothing is schedulable.
+    const added = await db.concepts.where('lemma').equals('bulk-alpha').first()
+    if (!added) throw new Error('concept missing')
+    if ((await db.cards.where('conceptId').equals(added.id).count()) !== 0) {
+      throw new Error('bulk add must not create cards before expansion')
+    }
+  })
+  await check('a word already in the list is skipped, not duplicated', async () => {
+    const { addWordsBulk } = await import('../src/ai/expand')
+    const res = await addWordsBulk({
+      lines: [{ lemma: 'bulk-alpha' }],
+      sourceLang: 'sv',
+      category: 'daily',
+    })
+    if (res.queued !== 0 || res.duplicates.length !== 1) {
+      throw new Error(`expected a duplicate, got ${JSON.stringify(res)}`)
+    }
+  })
+
   console.log(
     failures === 0
       ? '\nEvery UI query runs against the schema.\n'

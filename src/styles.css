@@ -625,3 +625,30 @@ kbd {
   margin: 0;
 }
 .field.inline select { width: auto; }
+
+
+/* --- Bulk add -------------------------------------------------------------- */
+.bulk-input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line, #d9d4cc);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: inherit;
+  resize: vertical;
+}
+.progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line, #e5e1da);
+  overflow: hidden;
+  margin-top: 0.6rem;
+}
+.progress-bar {
+  height: 100%;
+  background: var(--accent, #3a6ea5);
+  transition: width 0.2s ease;
+}
