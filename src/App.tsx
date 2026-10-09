@@ -12,12 +12,13 @@ import { AddWord } from './ui/AddWord'
 import { Review } from './ui/Review'
 import { Browse } from './ui/Browse'
 import { Training } from './ui/Training'
+import { Profile } from './ui/Profile'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { InstallButton } from './ui/InstallButton'
 import { NamePrompt } from './ui/NamePrompt'
 import { applyTheme, readTheme } from './lib/theme'
 
-type Tab = 'review' | 'training' | 'add' | 'browse' | 'settings'
+type Tab = 'review' | 'training' | 'add' | 'browse' | 'profile' | 'settings'
 
 export function App() {
   const { session, userId, email } = useSession()
@@ -224,6 +225,9 @@ function Workspace({
         <TabButton id="browse" tab={tab} set={setTab}>
           Words
         </TabButton>
+        <TabButton id="profile" tab={tab} set={setTab}>
+          Profile
+        </TabButton>
         <TabButton id="settings" tab={tab} set={setTab}>
           Settings
         </TabButton>
@@ -260,6 +264,7 @@ function Workspace({
         {tab === 'training' && <Training settings={settings} />}
         {tab === 'add' && <AddWord settings={settings} />}
         {tab === 'browse' && <Browse settings={settings} />}
+        {tab === 'profile' && <Profile settings={settings} email={email} />}
         {tab === 'settings' && (
           <SettingsPanel
             settings={settings}

@@ -213,6 +213,49 @@ async function main() {
     }
   })
 
+  console.log('\n12. Profile statistics')
+  await check('stats compute from existing rows and never write', async () => {
+    const { computeStats } = await import('../src/lib/stats')
+    const settings = await ensureSettings()
+    const before = await db.reviewLog.count()
+    const stats = await computeStats(settings)
+    if (await db.reviewLog.count() !== before) {
+      throw new Error('computing stats must not write anything')
+    }
+    if (stats.words !== (await db.concepts.filter((c) => !c.deletedAt).count())) {
+      throw new Error(`word count disagrees: ${stats.words}`)
+    }
+    if (stats.perLang.length !== settings.targetLangs.length) {
+      throw new Error('one row per target language')
+    }
+    if (stats.heatmap.length !== 182) {
+      throw new Error(`heatmap should cover the window, got ${stats.heatmap.length}`)
+    }
+  })
+  await check('the growth line starts from words already held, not zero', async () => {
+    const { computeStats } = await import('../src/lib/stats')
+    const settings = await ensureSettings()
+    // A one-day window: everything was added before it, so the first point
+    // must already be the full total rather than restarting the count.
+    const stats = await computeStats(settings, 1)
+    if (stats.growth[0].total !== stats.words) {
+      throw new Error(
+        `expected the line to open at ${stats.words}, got ${stats.growth[0].total}`,
+      )
+    }
+  })
+  await check('a deleted word leaves the counts', async () => {
+    const { computeStats } = await import('../src/lib/stats')
+    const settings = await ensureSettings()
+    const before = (await computeStats(settings)).words
+    const victim = await db.concepts.where('lemma').equals('bulk-beta').first()
+    if (!victim) throw new Error('fixture missing')
+    await db.concepts.put({ ...victim, deletedAt: Date.now() })
+    const after = (await computeStats(settings)).words
+    if (after !== before - 1) throw new Error(`expected ${before - 1}, got ${after}`)
+    await db.concepts.put({ ...victim, deletedAt: undefined })
+  })
+
   console.log('\n11. Training is read-only')
   await check('browsing never touches FSRS state', async () => {
     // The whole value of Training depends on this. If stepping through words

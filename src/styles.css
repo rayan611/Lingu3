@@ -829,3 +829,92 @@ kbd {
   margin: 0 auto;
   box-shadow: var(--shadow-lift);
 }
+
+
+/* --- Profile and stats ------------------------------------------------------ */
+.kv { margin: 0; display: grid; gap: 0.4rem; }
+.kv > div { display: flex; gap: 0.75rem; align-items: baseline; }
+.kv dt {
+  flex: 0 0 9rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+.kv dd { margin: 0; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: 0.6rem;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+.stat-value { font-size: 1.5rem; font-weight: 600; line-height: 1.1; }
+.stat-label { font-size: 0.8rem; color: var(--ink-soft); }
+.stat-hint { font-size: 0.72rem; color: var(--ink-faint); }
+
+.growth svg {
+  width: 100%;
+  height: 90px;
+  display: block;
+}
+.growth-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.growth-fill { fill: var(--accent-soft); stroke: none; }
+.growth-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.3rem;
+}
+
+.heatmap {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 1fr);
+  gap: 2px;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+  scrollbar-width: none;
+}
+.heatmap::-webkit-scrollbar { display: none; }
+.heat {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--line-soft);
+}
+.heat-pad { background: transparent; }
+.heat-1 { background: color-mix(in srgb, var(--accent) 25%, var(--line-soft)); }
+.heat-2 { background: color-mix(in srgb, var(--accent) 50%, var(--line-soft)); }
+.heat-3 { background: color-mix(in srgb, var(--accent) 75%, var(--line-soft)); }
+.heat-4 { background: var(--accent); }
+
+.stat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.stat-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--line);
+}
+.stat-table td {
+  padding: 0.4rem 0.5rem 0.4rem 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.stat-table tr.paused { color: var(--ink-faint); }
+.stat-table td:first-child { display: flex; gap: 0.4rem; align-items: center; }
