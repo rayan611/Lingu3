@@ -8,6 +8,7 @@ import { resetSyncCursors, type SyncResult } from '../sync/sync'
 import { THEMES, THEME_LABELS, readTheme, saveTheme, type Theme } from '../lib/theme'
 import { ImportExport } from './ImportExport'
 import { Profile } from './Profile'
+import { AdminPanel, SuggestionBox } from './Suggestions'
 
 interface SettingsPanelProps {
   settings: Settings
@@ -375,6 +376,13 @@ export function SettingsPanel({
         </p>
         <button onClick={() => void exportData()}>Export JSON</button>
       </div>
+
+      <SuggestionBox />
+
+      {/* Renders nothing unless the database says you are an admin — the local
+          settings row is synced, so trusting its is_admin would be client
+          state deciding what the server already decides. */}
+      <AdminPanel />
 
       {/* Which build is actually running. Without this there is no way to tell
           from a phone whether the service worker has picked up a new deploy —

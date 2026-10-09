@@ -1104,3 +1104,43 @@ kbd {
   margin-top: 4px;
   font-size: 0.78rem;
 }
+
+/* --- suggestions and admin ------------------------------------------------ */
+.suggestion-input {
+  width: 100%;
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  resize: vertical;
+  margin: 10px 0 8px;
+}
+.row.space-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.error-text { color: var(--danger); }
+
+/* Totals from admin_stats(). A plain grid rather than cards: these are eight
+   numbers glanced at, not a dashboard. */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 12px;
+  margin: 14px 0 20px;
+}
+.stat dt { color: var(--ink-faint); font-size: 0.76rem; }
+.stat dd {
+  margin: 2px 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.suggestion {
+  border-top: 1px solid var(--line-soft);
+  padding: 12px 0;
+}
+.suggestion-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.suggestion-body { margin: 6px 0 8px; white-space: pre-wrap; }
+.suggestion.status-done, .suggestion.status-dismissed { opacity: 0.6; }
+.closed-suggestions { margin-top: 10px; }
