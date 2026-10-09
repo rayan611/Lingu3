@@ -6,6 +6,7 @@ import { authConfigured } from '../auth/supabase'
 import { signOut } from '../auth/useSession'
 import { resetSyncCursors, type SyncResult } from '../sync/sync'
 import { THEMES, THEME_LABELS, readTheme, saveTheme, type Theme } from '../lib/theme'
+import { ImportExport } from './ImportExport'
 
 interface SettingsPanelProps {
   settings: Settings
@@ -341,11 +342,13 @@ export function SettingsPanel({
         </div>
       )}
 
+      <ImportExport settings={settings} />
+
       <div className="panel">
-        <h2>Data</h2>
+        <h2>Full backup</h2>
         <p className="muted small">
-          Export gives you a copy you control — worth doing before clearing site
-          data or changing browser.
+          Everything, including review history and FSRS state, as JSON. The CSV
+          above is for moving words between apps; this is for not losing them.
         </p>
         <button onClick={() => void exportData()}>Export JSON</button>
       </div>

@@ -938,3 +938,28 @@ kbd {
   border-color: var(--accent);
   color: var(--accent-ink);
 }
+
+
+/* --- CSV import ------------------------------------------------------------ */
+.import-table-wrap { overflow-x: auto; margin: 0.6rem 0; }
+.import-table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  min-width: 100%;
+}
+.import-table th {
+  text-align: left;
+  padding: 0.3rem 0.5rem 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.import-table th select { font-size: 0.78rem; padding: 0.15rem 0.3rem; width: auto; }
+.import-table td {
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-soft);
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

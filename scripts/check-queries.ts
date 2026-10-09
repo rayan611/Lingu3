@@ -213,6 +213,64 @@ async function main() {
     }
   })
 
+  console.log('\n16. CSV import and export')
+  await check('quoted fields, embedded commas and doubled quotes survive', async () => {
+    const { parseDelimited } = await import('../src/lib/csv')
+    const text =
+      'word,meaning\nhund,"dog, the animal"\n"say ""hej""",a greeting\n'
+    const rows = parseDelimited(text, ',')
+    if (rows.length !== 3) throw new Error(`expected 3 rows, got ${rows.length}`)
+    if (rows[1][1] !== 'dog, the animal') {
+      throw new Error(`a comma inside quotes was split: ${rows[1][1]}`)
+    }
+    if (rows[2][0] !== 'say "hej"') {
+      throw new Error(`doubled quotes not unescaped: ${rows[2][0]}`)
+    }
+  })
+  await check('a tab-separated Anki export is detected as tabs', async () => {
+    const { sniffDelimiter, parseDelimited, looksLikeHeader } = await import(
+      '../src/lib/csv'
+    )
+    const anki = 'Front\tBack\tTags\nhund\tdog\tanimals\nkatt\tcat\tanimals\n'
+    if (sniffDelimiter(anki) !== '\t') throw new Error('tabs not detected')
+    const rows = parseDelimited(anki, '\t')
+    if (!looksLikeHeader(rows[0])) throw new Error('header row not recognised')
+    if (rows[1][2] !== 'animals') throw new Error('the third column was lost')
+  })
+  await check('a round trip through the exporter reads back the same', async () => {
+    const { toCsv, parseDelimited } = await import('../src/lib/csv')
+    const original = [
+      ['lemma', 'meaning'],
+      ['hund', 'dog, friendly'],
+      ['hej', 'hi "there"'],
+    ]
+    const back = parseDelimited(toCsv(original), ',')
+    if (JSON.stringify(back) !== JSON.stringify(original)) {
+      throw new Error(`round trip changed the data: ${JSON.stringify(back)}`)
+    }
+  })
+  await check('imported rows carry their own topics', async () => {
+    const { addWordsBulk } = await import('../src/ai/expand')
+    const res = await addWordsBulk({
+      lines: [
+        { lemma: 'csv-one', tags: ['food', 'restaurant'] },
+        { lemma: 'csv-two' },
+      ],
+      sourceLang: 'sv',
+      category: 'daily',
+      tags: ['fallback'],
+    })
+    if (res.queued !== 2) throw new Error(`expected 2, got ${res.queued}`)
+    const one = await db.concepts.where('lemma').equals('csv-one').first()
+    const two = await db.concepts.where('lemma').equals('csv-two').first()
+    if (one?.tags?.join() !== 'food,restaurant') {
+      throw new Error(`per-row tags lost: ${JSON.stringify(one?.tags)}`)
+    }
+    if (two?.tags?.join() !== 'fallback') {
+      throw new Error(`batch fallback not applied: ${JSON.stringify(two?.tags)}`)
+    }
+  })
+
   console.log('\n15. Spanish and Russian')
   await check('both parse their own morphology and reject the wrong shape', async () => {
     const { parseMorphology } = await import('../src/db/types')

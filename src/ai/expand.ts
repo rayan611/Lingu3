@@ -437,6 +437,8 @@ export async function commitPreview(opts: {
 export interface BulkLine {
   lemma: string
   hint?: string
+  /** Per-row topics, used by the CSV importer. Falls back to the batch's. */
+  tags?: string[]
 }
 
 export interface BulkAddResult {
@@ -516,7 +518,11 @@ export async function addWordsBulk(opts: {
       sourceLang: opts.sourceLang,
       pos: 'other',
       category: opts.category,
-      tags: opts.tags?.length ? opts.tags : undefined,
+      tags: line.tags?.length
+        ? normaliseTags(line.tags)
+        : opts.tags?.length
+          ? normaliseTags(opts.tags)
+          : undefined,
       notes: line.hint,
       createdAt: now,
       updatedAt: now,
