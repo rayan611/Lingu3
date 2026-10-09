@@ -50,8 +50,18 @@ export function SettingsPanel({
     await saveSettings({ targetLangs: order })
   }
 
+  /**
+   * Three at a time, which is the name of the app and an honest limit rather
+   * than a technical one: the schema is per (word x language) and does not
+   * care, but four languages stacked on one review card is more than anyone
+   * reads, and the interference research is about production anyway.
+   */
+  const MAX_TARGETS = 3
+  const atLimit = settings.targetLangs.length >= MAX_TARGETS
+
   async function toggleTarget(lang: Lang) {
     const isTarget = settings.targetLangs.includes(lang)
+    if (!isTarget && atLimit) return
     if (isTarget) {
       await saveSettings({
         targetLangs: settings.targetLangs.filter((l) => l !== lang),
@@ -196,11 +206,18 @@ export function SettingsPanel({
 
         {available.some((l) => !settings.targetLangs.includes(l)) && (
           <div className="row">
-            <span className="muted small">Add:</span>
+            <span className="muted small">
+              {atLimit ? `${MAX_TARGETS} is the limit — remove one first:` : 'Add:'}
+            </span>
             {available
               .filter((l) => !settings.targetLangs.includes(l))
               .map((l) => (
-                <button key={l} className="chip" onClick={() => void toggleTarget(l)}>
+                <button
+                  key={l}
+                  className="chip"
+                  disabled={atLimit}
+                  onClick={() => void toggleTarget(l)}
+                >
                   + {LANG_NAMES[l]}
                 </button>
               ))}

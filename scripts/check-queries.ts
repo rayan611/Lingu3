@@ -213,6 +213,73 @@ async function main() {
     }
   })
 
+  console.log('\n15. Spanish and Russian')
+  await check('both parse their own morphology and reject the wrong shape', async () => {
+    const { parseMorphology } = await import('../src/db/types')
+    const es = parseMorphology('es', { kind: 'noun', gender: 'el', plural: 'perros' })
+    if (!es || es.kind !== 'noun') throw new Error('Spanish noun did not parse')
+    const ru = parseMorphology('ru', {
+      kind: 'verb',
+      infinitive: 'писать',
+      aspect: 'несовершенный',
+      aspectPartner: 'написать',
+    })
+    if (!ru || ru.kind !== 'verb') throw new Error('Russian verb did not parse')
+    // A German gender on a Spanish noun is not Spanish, and must be dropped
+    // rather than stored — a wrong article gets drilled for months.
+    if (parseMorphology('es', { kind: 'noun', gender: 'der' }) !== undefined) {
+      throw new Error('a foreign gender was accepted')
+    }
+  })
+  await check('their forms render with their own grammatical terms', async () => {
+    const { morphLines, genderBadge, isIncomplete } = await import(
+      '../src/lib/morphology'
+    )
+    const { parseMorphology } = await import('../src/db/types')
+    const ruVerb = parseMorphology('ru', {
+      kind: 'verb',
+      infinitive: 'писать',
+      aspect: 'несовершенный',
+      aspectPartner: 'написать',
+    })
+    const lines = morphLines('ru', ruVerb)
+    if (!lines.some((l) => l.value === 'написать')) {
+      throw new Error('the aspect partner must be shown on the card')
+    }
+    const esNoun = parseMorphology('es', { kind: 'noun', gender: 'la' })
+    if (genderBadge('es', esNoun) !== 'la') throw new Error('no Spanish gender badge')
+    // And a Spanish noun with no gender is flagged, like a Swedish one.
+    if (
+      !isIncomplete({
+        id: 'x',
+        conceptId: 'y',
+        lang: 'es',
+        headword: 'perro',
+        meaning: 'dog',
+        morphology: { kind: 'noun' } as never,
+        updatedAt: 0,
+      })
+    ) {
+      throw new Error('a genderless Spanish noun should be flagged')
+    }
+  })
+  await check('cards, queue and stats work with the new languages', async () => {
+    const settings = await ensureSettings()
+    await db.cards.put(makeCard('concept-0', 'es'))
+    await db.cards.put(makeCard('concept-0', 'ru'))
+    await db.cards.where('lang').anyOf(['es', 'ru']).toArray()
+    await buildQueue({ ...settings, targetLangs: ['es', 'ru'], activeLangs: ['es', 'ru'] })
+    const { computeStats } = await import('../src/lib/stats')
+    const stats = await computeStats({
+      ...settings,
+      targetLangs: ['es', 'ru'],
+      activeLangs: ['es', 'ru'],
+    })
+    if (stats.perLang.length !== 2) throw new Error('stats missed a language')
+    await db.cards.delete(compositeId('concept-0', 'es'))
+    await db.cards.delete(compositeId('concept-0', 'ru'))
+  })
+
   console.log('\n14. Words you keep forgetting')
   await check('a repeatedly failed card is flagged, a merely hard one is not', async () => {
     const { leechCounts, LEECH_LAPSES } = await import('../src/fsrs/queue')

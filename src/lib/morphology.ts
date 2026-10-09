@@ -4,8 +4,12 @@ import type {
   EnNoun,
   EnVerb,
   Entry,
+  EsNoun,
+  EsVerb,
   Lang,
   Morphology,
+  RuNoun,
+  RuVerb,
   SvNoun,
   SvVerb,
 } from '../db/types'
@@ -70,6 +74,48 @@ export function morphLines(lang: Lang, form: Form | undefined): MorphLine[] {
     ])
   }
 
+  if (lang === 'es') {
+    if (form.kind === 'noun') {
+      const f = form as EsNoun
+      return compact([f.plural && { label: 'plural', value: f.plural }])
+    }
+    const f = form as EsVerb
+    return compact([
+      { label: 'infinitivo', value: f.infinitivo },
+      { label: 'presente', value: f.presente },
+      { label: 'pretérito', value: f.preterito },
+      { label: 'participio', value: f.participio },
+      f.gerundio ? { label: 'gerundio', value: f.gerundio } : undefined,
+      f.reflexivo ? { label: 'reflexivo', value: 'sí' } : undefined,
+    ])
+  }
+
+  if (lang === 'ru') {
+    if (form.kind === 'noun') {
+      const f = form as RuNoun
+      return compact([
+        f.genitive && { label: 'родительный', value: f.genitive },
+        f.dative && { label: 'дательный', value: f.dative },
+        f.accusative && { label: 'винительный', value: f.accusative },
+        f.instrumental && { label: 'творительный', value: f.instrumental },
+        f.prepositional && { label: 'предложный', value: f.prepositional },
+        f.nominativePlural && { label: 'мн. число', value: f.nominativePlural },
+      ])
+    }
+    const f = form as RuVerb
+    return compact([
+      { label: 'вид', value: f.aspect },
+      // The other half of the pair, which you also have to be able to produce.
+      // Kept on the same entry rather than split into a second word: to a
+      // learner this is one item with two forms, and splitting it would mean
+      // two review histories for one memory.
+      f.aspectPartner ? { label: 'видовая пара', value: f.aspectPartner } : undefined,
+      f.presentFirst ? { label: 'я', value: f.presentFirst } : undefined,
+      f.presentThird ? { label: 'он/она', value: f.presentThird } : undefined,
+      f.past ? { label: 'прошедшее', value: f.past } : undefined,
+    ])
+  }
+
   if (lang === 'en') {
     if (form.kind === 'noun') {
       const f = form as EnNoun
@@ -95,6 +141,8 @@ export function genderBadge(lang: Lang, form: Form | undefined): string | null {
   if (!form || form.kind !== 'noun') return null
   if (lang === 'sv') return (form as SvNoun).gender
   if (lang === 'de') return (form as DeNoun).gender
+  if (lang === 'es') return (form as EsNoun).gender
+  if (lang === 'ru') return (form as RuNoun).gender
   return null
 }
 
@@ -102,7 +150,10 @@ export function genderBadge(lang: Lang, form: Form | undefined): string | null {
 export function isIncomplete(entry: Entry): boolean {
   if (!entry.morphology) return true
   if (entry.morphology.kind !== 'noun') return false
-  if (entry.lang !== 'sv' && entry.lang !== 'de') return false
+  // The languages where a missing gender is expensive: it decides the article
+  // or the whole declension, and the scheduler will drill a wrong one for
+  // months.
+  if (!['sv', 'de', 'es', 'ru'].includes(entry.lang)) return false
   return !genderBadge(entry.lang, entry.morphology)
 }
 

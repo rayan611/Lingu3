@@ -63,6 +63,8 @@ const LANG_NAMES: Record<string, string> = {
   en: 'English',
   sv: 'Swedish',
   de: 'German',
+  es: 'Spanish',
+  ru: 'Russian',
 }
 
 /**
@@ -97,10 +99,36 @@ English (en):
             "pastParticiple":"..." }
   anything else -> { "kind":"simple" }
 
+Spanish (es):
+  noun -> { "kind":"noun", "gender":"el"|"la", "plural":"..." }
+  verb -> { "kind":"verb", "infinitivo":"...", "presente":"<3rd person sing>",
+            "preterito":"<3rd person sing>", "participio":"...",
+            "gerundio":"...", "reflexivo":true|false }
+  anything else -> { "kind":"simple" }
+
+Russian (ru):
+  noun -> { "kind":"noun", "gender":"м"|"ж"|"с", "genitive":"...",
+            "dative":"...", "accusative":"...", "instrumental":"...",
+            "prepositional":"...", "nominativePlural":"...",
+            "animate":true|false }
+            All six forms are singular except nominativePlural.
+  verb -> { "kind":"verb", "infinitive":"...",
+            "aspect":"несовершенный"|"совершенный",
+            "aspectPartner":"<the other aspect of the same verb>",
+            "presentFirst":"<я form>", "presentThird":"<он/она form>",
+            "past":"<masculine singular>" }
+            Russian verbs come in aspect pairs. Give ONE entry, for the aspect
+            that fits the sense asked for, and put the other half in
+            aspectPartner — a learner has to produce both, but it is one word
+            to them. For a perfective verb, presentFirst/presentThird are the
+            future forms; give them anyway and say so in notes.
+  anything else -> { "kind":"simple" }
+
 Persian (fa):
   always -> { "kind":"simple" }
 
-Gender and auxiliary are never optional for nouns and verbs. They are the
+Gender is never optional for a Swedish, German, Spanish or Russian noun, and
+neither is the German auxiliary or the Russian aspect. They are the
 fields a learner most often gets wrong, so guessing is worse than useless —
 if you are genuinely unsure of a form, say so in "notes" rather than
 inventing one.
@@ -143,7 +171,7 @@ const TOOL = {
         items: {
           type: 'object',
           properties: {
-            lang: { type: 'string', enum: ['fa', 'en', 'sv', 'de'] },
+            lang: { type: 'string', enum: ['fa', 'en', 'sv', 'de', 'es', 'ru'] },
             word: { type: 'string' },
             meaning: { type: 'string', description: 'A few words at most.' },
             register: {
@@ -165,11 +193,11 @@ const TOOL = {
         items: {
           type: 'object',
           properties: {
-            lang: { type: 'string', enum: ['fa', 'en', 'sv', 'de'] },
+            lang: { type: 'string', enum: ['fa', 'en', 'sv', 'de', 'es', 'ru'] },
             headword: {
               type: 'string',
               description:
-                'The word in this language. For German and Swedish nouns include the article (der Hund, en hund).',
+                'The word in this language. For German, Swedish and Spanish nouns include the article (der Hund, en hund, el perro). Russian nouns take no article: give the nominative singular.',
             },
             meaning: {
               type: 'string',
@@ -576,7 +604,7 @@ const GEMINI_SCHEMA = {
       items: {
         type: 'OBJECT',
         properties: {
-          lang: { type: 'STRING', enum: ['fa', 'en', 'sv', 'de'] },
+          lang: { type: 'STRING', enum: ['fa', 'en', 'sv', 'de', 'es', 'ru'] },
           word: { type: 'STRING' },
           meaning: { type: 'STRING' },
           register: { type: 'STRING' },
@@ -590,7 +618,7 @@ const GEMINI_SCHEMA = {
       items: {
         type: 'OBJECT',
         properties: {
-          lang: { type: 'STRING', enum: ['fa', 'en', 'sv', 'de'] },
+          lang: { type: 'STRING', enum: ['fa', 'en', 'sv', 'de', 'es', 'ru'] },
           headword: { type: 'STRING' },
           meaning: { type: 'STRING' },
           morphologyJson: {

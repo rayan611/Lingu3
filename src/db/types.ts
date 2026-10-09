@@ -27,6 +27,8 @@ export const LANGUAGES = {
   en: { name: 'English', native: 'English', bcp47: 'en-GB', rtl: false },
   sv: { name: 'Swedish', native: 'Svenska', bcp47: 'sv-SE', rtl: false },
   de: { name: 'German', native: 'Deutsch', bcp47: 'de-DE', rtl: false },
+  es: { name: 'Spanish', native: 'Español', bcp47: 'es-ES', rtl: false },
+  ru: { name: 'Russian', native: 'Русский', bcp47: 'ru-RU', rtl: false },
 } as const satisfies Record<
   string,
   { name: string; native: string; bcp47: string; rtl: boolean }
@@ -135,6 +137,68 @@ const deVerb = z.object({
   prefix: z.string().optional(),
 })
 
+/**
+ * Spanish. Structurally the closest to what German already needed: a gender
+ * that decides the article, and a verb whose useful forms are the infinitive,
+ * one present, one past and the participle.
+ */
+const esNoun = z.object({
+  kind: z.literal('noun'),
+  gender: z.enum(['el', 'la']),
+  plural: z.string().optional(),
+})
+
+const esVerb = z.object({
+  kind: z.literal('verb'),
+  infinitivo: z.string(),
+  /** 3rd person singular, where the stem changes surface: puede, duerme. */
+  presente: z.string(),
+  preterito: z.string(),
+  participio: z.string(),
+  gerundio: z.string().optional(),
+  /** Reflexive verbs carry the pronoun: "levantarse", not "levantar". */
+  reflexivo: z.boolean().optional(),
+})
+
+/**
+ * Russian.
+ *
+ * Two things make this harder than the others. Nouns decline through six
+ * cases, so the forms are a table rather than a couple of fields — the five
+ * oblique singulars plus the nominative plural are stored, which is what a
+ * textbook drills first.
+ *
+ * And verbs come in aspect pairs: писать and написать are one meaning in two
+ * aspects, and a learner has to produce both. They are kept as ONE entry with
+ * an `aspectPartner` field rather than two concepts, because splitting them
+ * would mean two review histories and two entries in the known-word count for
+ * what is, to the learner, one item. The partner is shown on the card.
+ */
+const ruNoun = z.object({
+  kind: z.literal('noun'),
+  gender: z.enum(['м', 'ж', 'с']),
+  genitive: z.string().optional(),
+  dative: z.string().optional(),
+  accusative: z.string().optional(),
+  instrumental: z.string().optional(),
+  prepositional: z.string().optional(),
+  nominativePlural: z.string().optional(),
+  /** Animate nouns take the genitive in the accusative; worth flagging. */
+  animate: z.boolean().optional(),
+})
+
+const ruVerb = z.object({
+  kind: z.literal('verb'),
+  infinitive: z.string(),
+  aspect: z.enum(['несовершенный', 'совершенный']),
+  /** The other half of the pair — the form you also have to be able to produce. */
+  aspectPartner: z.string().optional(),
+  /** 1st and 3rd singular, which is where the conjugation class shows. */
+  presentFirst: z.string().optional(),
+  presentThird: z.string().optional(),
+  past: z.string().optional(),
+})
+
 const enNoun = z.object({
   kind: z.literal('noun'),
   plural: z.string().optional(),
@@ -160,11 +224,17 @@ export type DeNoun = z.infer<typeof deNoun>
 export type DeVerb = z.infer<typeof deVerb>
 export type EnNoun = z.infer<typeof enNoun>
 export type EnVerb = z.infer<typeof enVerb>
+export type EsNoun = z.infer<typeof esNoun>
+export type EsVerb = z.infer<typeof esVerb>
+export type RuNoun = z.infer<typeof ruNoun>
+export type RuVerb = z.infer<typeof ruVerb>
 
 export const MorphologySchema = z.discriminatedUnion('lang', [
   z.object({ lang: z.literal('sv'), form: z.union([svNoun, svVerb, simple]) }),
   z.object({ lang: z.literal('de'), form: z.union([deNoun, deVerb, simple]) }),
   z.object({ lang: z.literal('en'), form: z.union([enNoun, enVerb, simple]) }),
+  z.object({ lang: z.literal('es'), form: z.union([esNoun, esVerb, simple]) }),
+  z.object({ lang: z.literal('ru'), form: z.union([ruNoun, ruVerb, simple]) }),
   z.object({ lang: z.literal('fa'), form: faSimple }),
 ])
 export type Morphology = z.infer<typeof MorphologySchema>
