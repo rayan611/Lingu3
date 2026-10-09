@@ -11,9 +11,10 @@ import { sync, type SyncResult } from './sync/sync'
 import { AddWord } from './ui/AddWord'
 import { Review } from './ui/Review'
 import { Browse } from './ui/Browse'
+import { Training } from './ui/Training'
 import { SettingsPanel } from './ui/SettingsPanel'
 
-type Tab = 'review' | 'add' | 'browse' | 'settings'
+type Tab = 'review' | 'training' | 'add' | 'browse' | 'settings'
 
 export function App() {
   const { session, userId, email } = useSession()
@@ -203,6 +204,9 @@ function Workspace({
         <TabButton id="review" tab={tab} set={setTab} badge={due}>
           Test
         </TabButton>
+        <TabButton id="training" tab={tab} set={setTab}>
+          Training
+        </TabButton>
         <TabButton id="add" tab={tab} set={setTab}>
           Add
         </TabButton>
@@ -242,6 +246,7 @@ function Workspace({
         {tab === 'review' && (
           <ReviewTab settings={settings} onExit={() => setTab('add')} />
         )}
+        {tab === 'training' && <Training settings={settings} />}
         {tab === 'add' && <AddWord settings={settings} />}
         {tab === 'browse' && <Browse settings={settings} />}
         {tab === 'settings' && (

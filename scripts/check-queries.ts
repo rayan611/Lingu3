@@ -213,6 +213,33 @@ async function main() {
     }
   })
 
+  console.log('\n11. Training is read-only')
+  await check('browsing never touches FSRS state', async () => {
+    // The whole value of Training depends on this. If stepping through words
+    // wrote to cards or the review log, every interval would inflate and the
+    // scheduler would stop meaning anything.
+    const settings = await ensureSettings()
+    const before = {
+      cards: await db.cards.count(),
+      logs: await db.reviewLog.count(),
+      newest: (await db.cards.orderBy('updatedAt').last())?.updatedAt ?? 0,
+    }
+
+    // Exactly the queries the Training screen runs.
+    const concepts = await db.concepts.orderBy('createdAt').reverse().toArray()
+    concepts.filter((c) => !c.deletedAt)
+    await db.cards.where('lang').anyOf(settings.activeLangs as string[]).toArray()
+
+    const after = {
+      cards: await db.cards.count(),
+      logs: await db.reviewLog.count(),
+      newest: (await db.cards.orderBy('updatedAt').last())?.updatedAt ?? 0,
+    }
+    if (after.cards !== before.cards) throw new Error('cards were created')
+    if (after.logs !== before.logs) throw new Error('a review was logged')
+    if (after.newest !== before.newest) throw new Error('a card was updated')
+  })
+
   console.log('\n10. Topic tags')
   await check('the multiEntry tags index is queryable', async () => {
     // Index names are strings; only running the query proves the index exists.
