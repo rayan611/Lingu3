@@ -19,7 +19,7 @@ import {
   type Lang,
   type Settings,
 } from '../db/types'
-import { genderBadge } from '../lib/morphology'
+import { genderBadge, morphLines } from '../lib/morphology'
 
 interface Props {
   settings: Settings
@@ -194,13 +194,13 @@ export function Review({ settings, onExit }: Props) {
           {prompt?.headword ?? item.concept.lemma}
         </div>
         {/*
-          No meaning, in any language, while a word is being tested — not the
-          native gloss on the prompt and not the target-language definition on
-          the answer. A definition sitting beside a word you are being asked to
-          recall is the answer in another costume, and it turns retrieval
-          practice into recognition. Meanings are still on the word card, in
-          Training and in Reading, where reading them is the point.
+          The prompt is the one place a meaning belongs: this card is the
+          question, in the native language, and the gloss is what disambiguates
+          which sense you are being asked for. Every *answer* card below is
+          meaning-free — see LanguageAnswer.
         */}
+        {prompt?.meaning && <div className="prompt-gloss">{prompt.meaning}</div>}
+        <div className="prompt-pos muted">{item.concept.pos}</div>
       </div>
 
       {!revealed ? (
@@ -324,6 +324,7 @@ function LanguageAnswer({
     () => previewIntervals(card, settings),
     [card, settings],
   )
+  const lines = entry ? morphLines(card.lang, entry.morphology) : []
   const gender = entry ? genderBadge(card.lang, entry.morphology) : null
   const priority = settings.targetLangs.indexOf(card.lang as Lang) + 1
 
@@ -342,6 +343,25 @@ function LanguageAnswer({
       </div>
 
       {/*
+        Forms stay. The definite/indefinite/plural of a noun, a verb's tenses,
+        a comparative and superlative are not clues to the meaning — they are
+        further things you have to produce, and the unit you must produce is
+        `ist gegangen`, not `gehen`. What is withheld during a test is the
+        meaning alone: that is on the prompt card, in the native language,
+        where it is the question rather than the answer.
+      */}
+      {lines.length > 0 && (
+        <dl className="forms">
+          {lines.map((l) => (
+            <div key={l.label} className="form-row">
+              <dt>{l.label}</dt>
+              <dd lang={LANG_BCP47[card.lang]}>{l.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {/*
         The example is shown in the target language only. Its translation into
         the native language sits right next to a word you are being asked to
         recall, which hands you the answer and turns retrieval practice into
@@ -353,6 +373,7 @@ function LanguageAnswer({
           {entry.example}
         </div>
       )}
+      {entry?.notes && <div className="note">{entry.notes}</div>}
 
       <div className="grades">
         {GRADES.map((g, i) => (
