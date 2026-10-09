@@ -229,6 +229,7 @@ async function push(userId: string): Promise<number> {
   if (settings && settings.updatedAt > from) {
     const { error } = await sb.from('user_settings').upsert({
       user_id: userId,
+      display_name: settings.displayName ?? null,
       native_lang: settings.nativeLang,
       target_langs: settings.targetLangs,
       active_langs: settings.activeLangs,
@@ -291,6 +292,7 @@ async function pull(userId: string): Promise<number> {
         ...DEFAULT_SETTINGS,
         ...local,
         id: 'singleton',
+        displayName: (remoteSettings.display_name as string) ?? undefined,
         nativeLang: remoteSettings.native_lang as Lang,
         targetLangs: remoteSettings.target_langs as Lang[],
         activeLangs: remoteSettings.active_langs as Lang[],

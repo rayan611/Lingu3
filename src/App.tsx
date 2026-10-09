@@ -13,11 +13,20 @@ import { Review } from './ui/Review'
 import { Browse } from './ui/Browse'
 import { Training } from './ui/Training'
 import { SettingsPanel } from './ui/SettingsPanel'
+import { InstallButton } from './ui/InstallButton'
+import { NamePrompt } from './ui/NamePrompt'
+import { applyTheme, readTheme } from './lib/theme'
 
 type Tab = 'review' | 'training' | 'add' | 'browse' | 'settings'
 
 export function App() {
   const { session, userId, email } = useSession()
+
+  // Before first paint, so a dark-theme user does not get a white flash.
+  useEffect(() => {
+    applyTheme(readTheme())
+  }, [])
+
   const [dbReady, setDbReady] = useState(false)
   const [dbKey, setDbKey] = useState('local')
 
@@ -181,21 +190,23 @@ function Workspace({
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">Lingua</div>
+        <div className="brand-block">
+          <span className="brand">
+            {settings.displayName ? `Hej ${settings.displayName}` : 'Lingu3'}
+          </span>
+          <span className="brand-sub">{learningLine(settings)}</span>
+        </div>
         <div className="topbar-meta">
           {!online && <span className="badge offline">offline</span>}
           {syncing && <span className="badge subtle">syncing…</span>}
           {syncState?.error && syncState.error !== 'offline' && (
             <span className="badge warn-badge">sync failed</span>
           )}
-          <span className="muted small">
-            {settings.targetLangs
-              .filter((l) => settings.activeLangs.includes(l))
-              .map((l) => LANG_NAMES[l])
-              .join(' · ') || 'no active language'}
-          </span>
+          <InstallButton />
         </div>
       </header>
+
+      {authConfigured && !settings.displayName && <NamePrompt />}
 
       <nav className="tabs">
         {/* The tab is called Test; the id, the route and review_log keep their
@@ -261,6 +272,25 @@ function Workspace({
       </main>
     </div>
   )
+}
+
+/**
+ * "Learning Swedish, German and English" — but on a phone three full language
+ * names wrap badly, so below a narrow width it is the codes instead.
+ */
+function learningLine(settings: Settings): string {
+  const active = settings.targetLangs.filter((l) =>
+    settings.activeLangs.includes(l),
+  )
+  if (active.length === 0) return 'no active language'
+  const narrow =
+    typeof window !== 'undefined' && window.innerWidth < 420 && active.length > 2
+  const names = active.map((l) => (narrow ? l.toUpperCase() : LANG_NAMES[l]))
+  const list =
+    names.length > 1
+      ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+      : names[0]
+  return `Learning ${list}`
 }
 
 function ReviewTab({

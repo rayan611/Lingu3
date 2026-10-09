@@ -276,6 +276,11 @@ export interface PendingExpansion {
 
 export interface Settings {
   id: 'singleton'
+  /**
+   * What to call you in the app. Account data, so it syncs — unlike the theme,
+   * which is a property of the device you happen to be holding.
+   */
+  displayName?: string
   nativeLang: Lang
   /** Ordered by priority — this is the stacking order on the review card. */
   targetLangs: Lang[]

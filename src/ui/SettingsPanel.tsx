@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, saveSettings } from '../db/db'
 import { LANGS, LANG_NAMES, LANG_NATIVE_NAMES, type Lang, type Settings } from '../db/types'
 import { authConfigured } from '../auth/supabase'
 import { signOut } from '../auth/useSession'
 import { resetSyncCursors, type SyncResult } from '../sync/sync'
+import { THEMES, THEME_LABELS, readTheme, saveTheme, type Theme } from '../lib/theme'
 
 interface SettingsPanelProps {
   settings: Settings
@@ -20,6 +22,9 @@ export function SettingsPanel({
   syncing,
   onSync,
 }: SettingsPanelProps) {
+  const [theme, setTheme] = useState<Theme>(() => readTheme())
+  const [name, setName] = useState(settings.displayName ?? '')
+
   const cardCounts =
     useLiveQuery(async () => {
       const cards = await db.cards.toArray()
@@ -64,6 +69,50 @@ export function SettingsPanel({
 
   return (
     <div className="stack">
+      <div className="panel">
+        <h2>You</h2>
+        <label className="field">
+          <span>Name</span>
+          <div className="row">
+            <input
+              className="field-grow"
+              value={name}
+              maxLength={40}
+              placeholder="Your name"
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() =>
+                void saveSettings({ displayName: name.trim() || undefined })
+              }
+            />
+          </div>
+          <span className="muted small">
+            Shown at the top of the screen. Synced, so it follows your account.
+          </span>
+        </label>
+
+        <label className="field">
+          <span>Theme</span>
+          <select
+            value={theme}
+            onChange={(e) => {
+              const next = e.target.value as Theme
+              setTheme(next)
+              saveTheme(next)
+            }}
+          >
+            {THEMES.map((t) => (
+              <option key={t} value={t}>
+                {THEME_LABELS[t]}
+              </option>
+            ))}
+          </select>
+          <span className="muted small">
+            Kept on this device rather than synced — which theme suits you
+            depends on the screen you are looking at, not on your account.
+          </span>
+        </label>
+      </div>
+
       <div className="panel">
         <h2>Languages</h2>
 
@@ -283,6 +332,13 @@ export function SettingsPanel({
         </p>
         <button onClick={() => void exportData()}>Export JSON</button>
       </div>
+
+      {/* Which build is actually running. Without this there is no way to tell
+          from a phone whether the service worker has picked up a new deploy —
+          which, after a day lost to a cached login wall, is worth four lines. */}
+      <p className="version-line">
+        Lingu3 v{__APP_VERSION__} · built {__BUILD_DATE__}
+      </p>
     </div>
   )
 }

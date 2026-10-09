@@ -734,3 +734,98 @@ kbd {
 @media (max-width: 460px) {
   .tab { padding: 8px 11px; font-size: 0.85rem; }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Explicit themes.
+
+   The block near the top is the automatic one: dark unless you have asked for
+   light. These two are chosen rather than inferred, so they have to win
+   whatever the device is set to — which is why the dark palette is repeated
+   here rather than nested inside a prefers-color-scheme query.
+--------------------------------------------------------------------------- */
+
+:root[data-theme='dark'] {
+  --bg: #171c22;
+  --bg-tint: #1b2128;
+  --panel: #212830;
+  --panel-soft: #1c232a;
+  --ink: #e9e7e2;
+  --ink-soft: #a8b2bb;
+  --ink-faint: #76818c;
+  --line: #313a44;
+  --line-soft: #2a323b;
+  --accent: #6cb79e;
+  --accent-ink: #8fcfb8;
+  --accent-soft: #223730;
+  --warn: #d9a85d;
+  --warn-soft: #2e2719;
+  --danger: #e08a7e;
+  --danger-soft: #33211f;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lift: 0 10px 28px -14px rgba(0, 0, 0, 0.75);
+
+  --grade-again: #e08a7e;
+  --grade-hard: #d9a85d;
+  --grade-good: #6cb79e;
+  --grade-easy: #85aedb;
+}
+
+/* Dark blue: the same structure in cooler slate, with a blue accent in place
+   of the green. The contrast relationships are identical, so nothing below
+   has to know which of the two dark themes is on. */
+:root[data-theme='dark-blue'] {
+  --bg: #121a28;
+  --bg-tint: #16202f;
+  --panel: #1b2740;
+  --panel-soft: #172134;
+  --ink: #e6ecf5;
+  --ink-soft: #a3b3cc;
+  --ink-faint: #6f7f99;
+  --line: #2b3b58;
+  --line-soft: #243148;
+  --accent: #6fa8dc;
+  --accent-ink: #92c2ec;
+  --accent-soft: #1d2f4a;
+  --warn: #d9a85d;
+  --warn-soft: #2d2718;
+  --danger: #e08a7e;
+  --danger-soft: #33211f;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 10px 28px -14px rgba(0, 0, 0, 0.8);
+
+  --grade-again: #e08a7e;
+  --grade-hard: #d9a85d;
+  --grade-good: #6fa8dc;
+  --grade-easy: #8fcfb8;
+}
+
+/* --- Header: name, languages, install -------------------------------------- */
+.brand-block { display: flex; flex-direction: column; line-height: 1.25; }
+.brand-sub { font-size: 0.75rem; color: var(--ink-faint); }
+.install-button {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.version-line {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  text-align: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.install-hint {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 40;
+  max-width: 28rem;
+  margin: 0 auto;
+  box-shadow: var(--shadow-lift);
+}

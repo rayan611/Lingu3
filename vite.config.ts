@@ -1,17 +1,27 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import pkg from './package.json'
 
 export default defineConfig({
+  // Baked in at build time and shown at the bottom of Settings. Without a
+  // version on screen there is no way to tell, from a phone, whether the
+  // service worker has actually picked up a new deploy.
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+  },
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Lingua',
-        short_name: 'Lingua',
-        description: 'Personal multi-language vocabulary trainer',
+        name: 'Lingu3 — learn up to 3 languages',
+        // What appears under the icon on a home screen, where there is room
+        // for about twelve characters and no more.
+        short_name: 'Lingu3',
+        description: 'Learn up to 3 languages at once, from your own words',
         theme_color: '#1f2933',
         background_color: '#ffffff',
         display: 'standalone',
