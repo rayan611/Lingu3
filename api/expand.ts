@@ -23,14 +23,6 @@
  * normalised to the same shape before they leave this file, and the database,
  * the scheduler and the review screen see identical entries either way.
  */
-import {
-  authConfigured,
-  callerId,
-  json,
-  makeHandler,
-  makeLimiter,
-} from './_http'
-
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const PROVIDER: 'gemini' | 'anthropic' = GEMINI_KEY ? 'gemini' : 'anthropic'
@@ -295,6 +287,160 @@ Call the record_word tool. Do not write anything outside the tool call.`
  * below anything that costs real money.
  */
 const overLimit = makeLimiter(80)
+
+// ---------------------------------------------------------------------------
+// Two calling conventions, one function
+//
+// Vercel can invoke a Node function either with web objects (Request in,
+// Response out) or with the older Node pair (req, res) — and this project gets
+// the older one. A handler written for the web signature does not fail loudly
+// under it; it hangs until the gateway gives up (504, blank page), or throws on
+// req.json() and is answered with the platform's own HTML page (500, no JSON
+// for the app to read). That cost a day; see the build log.
+//
+// This block is duplicated in every file under api/ ON PURPOSE. It was briefly
+// factored out into api/_http.ts, which broke production immediately:
+// package.json is "type": "module", so Node's ESM resolver requires a file
+// extension on a relative import. `./_http` resolves under tsx locally and
+// throws ERR_MODULE_NOT_FOUND on Vercel at import time — which surfaces as the
+// same unreadable HTML 500 the convention bug did. Sixty duplicated lines with
+// no import is worth more here than one shared copy that can take the whole
+// endpoint down on a resolution rule that does not show up in any local check.
+// ---------------------------------------------------------------------------
+
+type NodeResponse = {
+  statusCode: number
+  setHeader: (k: string, v: string) => void
+  end: (body?: string) => void
+}
+
+type NodeRequest = {
+  method?: string
+  url?: string
+  headers: Record<string, string | string[] | undefined>
+  body?: unknown
+}
+
+function json(payload: unknown, status: number): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+/** The body as text, whether the platform parsed it for us or did not. */
+function rawBody(body: unknown): string | undefined {
+  if (body === undefined || body === null) return undefined
+  if (typeof body === 'string') return body
+  if (body instanceof Uint8Array) return new TextDecoder().decode(body)
+  return JSON.stringify(body)
+}
+
+function toWebRequest(req: NodeRequest, fallbackPath: string): Request {
+  const headers = new Headers()
+  for (const [key, value] of Object.entries(req.headers ?? {})) {
+    if (typeof value === 'string') headers.set(key, value)
+    else if (Array.isArray(value)) headers.set(key, value.join(', '))
+  }
+  // Vercel has already parsed a JSON body into req.body by this point, so it is
+  // re-serialised rather than read from the stream, which is consumed.
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
+  return new Request(`https://local${req.url ?? fallbackPath}`, {
+    method: req.method ?? 'GET',
+    headers,
+    body: hasBody ? rawBody(req.body) : undefined,
+  })
+}
+
+/**
+ * Wraps a web-style handler so it works under either convention, and so
+ * nothing thrown inside reaches the platform's error page — an HTML 500 is
+ * unreadable to the app, which can then only report the status number.
+ */
+function makeHandler(
+  respond: (req: Request) => Promise<Response>,
+  fallbackPath: string,
+) {
+  const guarded = async (req: Request): Promise<Response> => {
+    try {
+      return await respond(req)
+    } catch (err) {
+      return json(
+        {
+          error: `Request crashed: ${err instanceof Error ? err.message : String(err)}`,
+        },
+        500,
+      )
+    }
+  }
+
+  return async function handler(
+    req: Request | NodeRequest,
+    res?: NodeResponse,
+  ): Promise<Response | void> {
+    if (!res || typeof res.setHeader !== 'function') {
+      return guarded(req as Request)
+    }
+    const response = await guarded(toWebRequest(req as NodeRequest, fallbackPath))
+    res.statusCode = response.status
+    response.headers.forEach((value, key) => res.setHeader(key, value))
+    res.end(await response.text())
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Who is allowed to call this
+//
+// The site is public, so without a check this endpoint is a free model proxy
+// billed to us. The check is the Supabase access token the app already holds:
+// the caller sends it, we ask Supabase whose it is, and refuse if the answer is
+// nobody. A shared secret would have been easier and worthless — one shipped in
+// a public browser bundle is readable by whoever reads the bundle.
+// ---------------------------------------------------------------------------
+
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
+const SUPABASE_KEY =
+  process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY
+
+const authConfigured = Boolean(SUPABASE_URL && SUPABASE_KEY)
+
+async function callerId(req: Request): Promise<string | null> {
+  const header = req.headers.get('authorization') ?? ''
+  const token = header.toLowerCase().startsWith('bearer ')
+    ? header.slice(7).trim()
+    : ''
+  if (!token) return null
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: {
+        apikey: SUPABASE_KEY as string,
+        authorization: `Bearer ${token}`,
+      },
+    })
+    if (!res.ok) return null
+    const user = (await res.json()) as { id?: string }
+    return user.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A ceiling on how much one account can spend in an hour. Per server instance
+ * rather than global, so it is a brake and not a guarantee — the guarantee is a
+ * spend cap in the provider's console.
+ */
+function makeLimiter(hourlyLimit: number) {
+  const WINDOW_MS = 60 * 60 * 1000
+  const recent = new Map<string, number[]>()
+  return function overLimit(userId: string): boolean {
+    const now = Date.now()
+    const hits = (recent.get(userId) ?? []).filter((t) => now - t < WINDOW_MS)
+    hits.push(now)
+    recent.set(userId, hits)
+    return hits.length > hourlyLimit
+  }
+}
 
 export default makeHandler(respond, '/api/expand')
 

@@ -132,8 +132,8 @@ check('anthropic: the tool call is unwrapped', anthropic?.pos === 'noun', JSON.s
 // The story endpoint, through the same two conventions.
 //
 // It is a second function on the same platform, so it can fail in exactly the
-// way the first one did. The plumbing is now shared (api/_http.ts) — this
-// proves the sharing actually works rather than assuming it.
+// way the first one did, so it is exercised the same way. Each api file keeps
+// its own copy of the plumbing — see the self-containment check below.
 // ---------------------------------------------------------------------------
 
 const { default: storyHandler } = await import('../api/story')
@@ -196,6 +196,46 @@ for (const [name, call] of [
     `${name}: a malformed body is a clean error, not a crash`,
     bad.status >= 400 && isJson(bad.text),
     `${bad.status} ${bad.text.slice(0, 80)}`,
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// No relative imports inside api/
+//
+// This is the check for a bug that reached production: the shared plumbing was
+// briefly factored into api/_http.ts, and because package.json is
+// "type": "module", Node's ESM resolver requires a file extension on relative
+// specifiers. `./_http` resolved under tsx here and threw ERR_MODULE_NOT_FOUND
+// on Vercel at import time, so the function never ran and the platform served
+// an HTML 500 the app could not read — the same unreadable failure as the
+// calling-convention bug, from a different cause.
+//
+// Every file under api/ stays self-contained. Duplicated plumbing is cheaper
+// than an endpoint that only fails once deployed.
+// ---------------------------------------------------------------------------
+
+const { readdirSync, readFileSync } = await import('node:fs')
+
+console.log('\nThe api/ files are self-contained')
+
+const apiFiles = readdirSync('api').filter((f) => f.endsWith('.ts'))
+check('there are api files to check', apiFiles.length > 0, 'api/ looks empty')
+
+for (const file of apiFiles) {
+  const source = readFileSync(`api/${file}`, 'utf8')
+  // Strip comments first; this file's own explanation mentions './_http'.
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+  const relative = [...code.matchAll(/\bfrom\s+['"](\.[^'"]*)['"]/g)].map(
+    (m) => m[1],
+  )
+  const extensionless = relative.filter((spec) => !/\.[cm]?js$/.test(spec))
+  check(
+    `${file}: no extensionless relative import`,
+    extensionless.length === 0,
+    `found ${extensionless.join(', ')} — under "type": "module" Node needs the .js extension, and this only fails once deployed`,
   )
 }
 
