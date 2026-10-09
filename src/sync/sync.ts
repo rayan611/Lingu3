@@ -184,21 +184,109 @@ const logOut = (l: ReviewLogRow, userId: string): Row => ({
 
 // --- sync ------------------------------------------------------------------
 
-let running = false
+/**
+ * How long a sync may hold the lock before the next attempt is allowed to
+ * ignore it. Longer than STEP_TIMEOUT_MS so the timeout normally wins; this is
+ * only reached when the timer itself never fired.
+ */
+export const STALE_LOCK_MS = 60_000
+
+/** How long a single push or pull may take before it is abandoned. */
+export const STEP_TIMEOUT_MS = 45_000
+
+/**
+ * A mutex that cannot be held forever.
+ *
+ * Kept as its own object rather than two module-level booleans so the
+ * staleness rule can be exercised by a check with fake timestamps, instead of
+ * a test that waits a real minute.
+ */
+export class ExpiringLock {
+  private held = false
+  private since = 0
+
+  constructor(private readonly staleAfterMs: number) {}
+
+  /** True if the lock was taken; false if someone else legitimately holds it. */
+  acquire(now = Date.now()): boolean {
+    if (this.held && now - this.since < this.staleAfterMs) return false
+    this.held = true
+    this.since = now
+    return true
+  }
+
+  release(): void {
+    this.held = false
+  }
+
+  isHeld(now = Date.now()): boolean {
+    return this.held && now - this.since < this.staleAfterMs
+  }
+}
+
+const lock = new ExpiringLock(STALE_LOCK_MS)
+
+/**
+ * Bounds a promise that may never settle.
+ *
+ * The lock below is released in a `finally`, which makes it exception-safe but
+ * not hang-safe: Supabase's fetch has no default timeout, and a request issued
+ * as the tab is backgrounded on a phone can be frozen mid-flight and neither
+ * resolve nor reject. Without this the lock would be held for the rest of the
+ * page's life and every later sync would answer `already running`.
+ */
+export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  return Promise.race([
+    p.finally(() => clearTimeout(timer)),
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${what} timed out`)), ms)
+    }),
+  ])
+}
+
+/**
+ * Moves a cursor forward, never back.
+ *
+ * A step that timed out is abandoned but keeps executing, and may finish after
+ * a later sync has already advanced the cursor past its own `startedAt`.
+ * Writing that older value would re-send a window of rows on the next push —
+ * harmless, since every write is an idempotent upsert, but pointless.
+ */
+export async function advanceCursor(key: string, to: number): Promise<void> {
+  const current = Number(await getMeta(key)) || 0
+  if (to > current) await setMeta(key, to)
+}
 
 export async function sync(userId: string): Promise<SyncResult> {
   const at = Date.now()
   if (!navigator.onLine) return { pushed: 0, pulled: 0, at, error: 'offline' }
   // One at a time. Two overlapping syncs would race on the cursors and could
-  // skip a window of changes permanently.
-  if (running) return { pushed: 0, pulled: 0, at, error: 'already running' }
-  running = true
+  // skip a window of changes permanently. The lock expires, though: a held
+  // lock older than STALE_LOCK_MS belongs to a run that is never coming back.
+  if (!lock.acquire(at)) {
+    return { pushed: 0, pulled: 0, at, error: 'already running' }
+  }
+
+  // Aborting is what actually stops the request; the timeout only stops us
+  // waiting for it. Both, because a frozen tab fires neither.
+  const controller = new AbortController()
+  const abort = setTimeout(() => controller.abort(), STEP_TIMEOUT_MS * 2)
 
   try {
-    const pushed = await push(userId)
-    const pulled = await pull(userId)
+    const pushed = await withTimeout(
+      push(userId, controller.signal),
+      STEP_TIMEOUT_MS,
+      'push',
+    )
+    const pulled = await withTimeout(
+      pull(userId, controller.signal),
+      STEP_TIMEOUT_MS,
+      'pull',
+    )
     return { pushed, pulled, at: Date.now() }
   } catch (err) {
+    controller.abort()
     return {
       pushed: 0,
       pulled: 0,
@@ -206,11 +294,17 @@ export async function sync(userId: string): Promise<SyncResult> {
       error: err instanceof Error ? err.message : String(err),
     }
   } finally {
-    running = false
+    clearTimeout(abort)
+    lock.release()
   }
 }
 
-async function push(userId: string): Promise<number> {
+/** Whether a sync is in flight right now — for the UI and for the checks. */
+export function syncLockHeld(): boolean {
+  return lock.isHeld()
+}
+
+async function push(userId: string, signal: AbortSignal): Promise<number> {
   const sb = supabase()
   const since = Number(await getMeta(CURSOR_PUSH)) || 0
   // One second of overlap: clocks and transaction boundaries mean a row
@@ -224,6 +318,7 @@ async function push(userId: string): Promise<number> {
     const { error } = await sb
       .from('concepts')
       .upsert(concepts.map((c) => conceptOut(c, userId)))
+      .abortSignal(signal)
     if (error) throw new Error(`concepts: ${error.message}`)
     count += concepts.length
   }
@@ -233,13 +328,17 @@ async function push(userId: string): Promise<number> {
     const { error } = await sb
       .from('entries')
       .upsert(entries.map((e) => entryOut(e, userId)))
+      .abortSignal(signal)
     if (error) throw new Error(`entries: ${error.message}`)
     count += entries.length
   }
 
   const cards = await db.cards.filter((c) => c.updatedAt > from).toArray()
   if (cards.length) {
-    const { error } = await sb.from('cards').upsert(cards.map((c) => cardOut(c, userId)))
+    const { error } = await sb
+      .from('cards')
+      .upsert(cards.map((c) => cardOut(c, userId)))
+      .abortSignal(signal)
     if (error) throw new Error(`cards: ${error.message}`)
     count += cards.length
   }
@@ -249,6 +348,7 @@ async function push(userId: string): Promise<number> {
     const { error } = await sb
       .from('stories')
       .upsert(stories.map((s) => storyOut(s, userId)))
+      .abortSignal(signal)
     if (error) throw new Error(`stories: ${error.message}`)
     count += stories.length
   }
@@ -262,10 +362,11 @@ async function push(userId: string): Promise<number> {
     const { error } = await sb
       .from('review_log')
       .upsert(logs.map((l) => logOut(l, userId)), { ignoreDuplicates: true })
+      .abortSignal(signal)
     if (error) throw new Error(`review_log: ${error.message}`)
     count += logs.length
   }
-  await setMeta(CURSOR_LOG, startedAt)
+  await advanceCursor(CURSOR_LOG, startedAt)
 
   const settings = await db.settings.get('singleton')
   if (settings && settings.updatedAt > from) {
@@ -279,18 +380,18 @@ async function push(userId: string): Promise<number> {
       daily_review_limit: settings.dailyReviewLimit,
       request_retention: settings.requestRetention,
       updated_at: iso(settings.updatedAt),
-    })
+    }).abortSignal(signal)
     if (error) throw new Error(`settings: ${error.message}`)
     count += 1
   }
 
   // Only advance the cursor once everything landed, so a mid-push failure
   // retries the whole window instead of losing part of it.
-  await setMeta(CURSOR_PUSH, startedAt)
+  await advanceCursor(CURSOR_PUSH, startedAt)
   return count
 }
 
-async function pull(userId: string): Promise<number> {
+async function pull(userId: string, signal: AbortSignal): Promise<number> {
   const sb = supabase()
   const since = Number(await getMeta(CURSOR_PULL)) || 0
   const from = iso(Math.max(0, since - 1000))
@@ -302,6 +403,7 @@ async function pull(userId: string): Promise<number> {
     .select('*')
     .eq('user_id', userId)
     .gt('updated_at', from)
+    .abortSignal(signal)
   if (cErr) throw new Error(`concepts: ${cErr.message}`)
   count += await mergeInto(db.concepts, (concepts ?? []).map(conceptIn))
 
@@ -310,6 +412,7 @@ async function pull(userId: string): Promise<number> {
     .select('*')
     .eq('user_id', userId)
     .gt('updated_at', from)
+    .abortSignal(signal)
   if (eErr) throw new Error(`entries: ${eErr.message}`)
   count += await mergeInto(db.entries, (entries ?? []).map(entryIn))
 
@@ -318,6 +421,7 @@ async function pull(userId: string): Promise<number> {
     .select('*')
     .eq('user_id', userId)
     .gt('updated_at', from)
+    .abortSignal(signal)
   if (kErr) throw new Error(`cards: ${kErr.message}`)
   count += await mergeInto(db.cards, (cards ?? []).map(cardIn))
 
@@ -326,6 +430,7 @@ async function pull(userId: string): Promise<number> {
     .select('*')
     .eq('user_id', userId)
     .gt('updated_at', from)
+    .abortSignal(signal)
   if (sErr) throw new Error(`stories: ${sErr.message}`)
   count += await mergeInto(db.stories, (stories ?? []).map(storyIn))
 
@@ -333,6 +438,7 @@ async function pull(userId: string): Promise<number> {
     .from('user_settings')
     .select('*')
     .eq('user_id', userId)
+    .abortSignal(signal)
     .maybeSingle()
   if (remoteSettings) {
     const local = await db.settings.get('singleton')
@@ -356,7 +462,7 @@ async function pull(userId: string): Promise<number> {
     }
   }
 
-  await setMeta(CURSOR_PULL, startedAt)
+  await advanceCursor(CURSOR_PULL, startedAt)
   return count
 }
 

@@ -8,6 +8,12 @@
 import 'fake-indexeddb/auto'
 import { adoptLocalData, db, openForUser, getMeta, setMeta, readSettings, ensureSettings } from '../src/db/db'
 import type { Concept } from '../src/db/types'
+import {
+  ExpiringLock,
+  advanceCursor,
+  withTimeout,
+  STALE_LOCK_MS,
+} from '../src/sync/sync'
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -95,6 +101,59 @@ async function main() {
   check('cursor reads back', (await getMeta('sync.lastPulledAt')) === 12345)
   await setMeta('sync.lastPulledAt', 0)
   check('cursor resets to zero', (await getMeta('sync.lastPulledAt')) === 0)
+
+  console.log('\n6. A hung sync cannot hold the lock forever')
+  // The bug this guards: `running` was only cleared in a `finally`, so a fetch
+  // frozen by the OS when the tab was backgrounded held it for the life of the
+  // page and every later sync answered 'already running' until a reload.
+  const lock = new ExpiringLock(STALE_LOCK_MS)
+  const t0 = 1_000_000
+  check('a free lock is acquired', lock.acquire(t0))
+  check('a held lock refuses a second caller', !lock.acquire(t0 + 1000))
+  check(
+    'and still refuses just before it goes stale',
+    !lock.acquire(t0 + STALE_LOCK_MS - 1),
+  )
+  check(
+    'but a lock older than the stale window is taken over',
+    lock.acquire(t0 + STALE_LOCK_MS),
+  )
+  lock.release()
+  check('a released lock is free again', lock.acquire(t0 + STALE_LOCK_MS + 1))
+
+  console.log('\n7. A step that never settles is abandoned')
+  const hang = new Promise<number>(() => {})
+  let timedOut = ''
+  try {
+    await withTimeout(hang, 20, 'push')
+  } catch (err) {
+    timedOut = err instanceof Error ? err.message : String(err)
+  }
+  check('withTimeout rejects rather than hanging', timedOut === 'push timed out', timedOut)
+
+  const quick = await withTimeout(Promise.resolve(7), 1000, 'pull')
+  check('and passes a value straight through when it settles', quick === 7)
+
+  console.log('\n8. Cursors only ever move forward')
+  // An abandoned push keeps running and may finish after a later sync has
+  // already moved the cursor past its own startedAt. Writing that older value
+  // would re-send a window of rows for nothing.
+  await setMeta('sync.lastPushedAt', 0)
+  await advanceCursor('sync.lastPushedAt', 5000)
+  check('a fresh cursor advances', (await getMeta('sync.lastPushedAt')) === 5000)
+  await advanceCursor('sync.lastPushedAt', 9000)
+  check('a newer value advances it', (await getMeta('sync.lastPushedAt')) === 9000)
+  await advanceCursor('sync.lastPushedAt', 3000)
+  check(
+    'a stale value from an abandoned run leaves it alone',
+    (await getMeta('sync.lastPushedAt')) === 9000,
+    `got ${await getMeta('sync.lastPushedAt')}`,
+  )
+  await setMeta('sync.lastPushedAt', 0)
+  check(
+    'and the reset path can still force it back to zero',
+    (await getMeta('sync.lastPushedAt')) === 0,
+  )
 
   console.log(
     failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) failed.\n`,

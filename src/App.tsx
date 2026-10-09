@@ -8,6 +8,14 @@ import { authConfigured } from './auth/supabase'
 import { useSession } from './auth/useSession'
 import { SignIn } from './auth/SignIn'
 import { sync, type SyncResult } from './sync/sync'
+
+/**
+ * Sync outcomes that are not failures and must not raise a banner. `offline`
+ * is the expected state on a train; `already running` just means two triggers
+ * overlapped — the five-minute interval firing while a debounced write-sync is
+ * still in flight — and the work is being done by the run that holds the lock.
+ */
+const BENIGN_SYNC_ERRORS = new Set(['offline', 'already running'])
 import { AddWord } from './ui/AddWord'
 import { Review } from './ui/Review'
 import { Browse } from './ui/Browse'
@@ -208,7 +216,7 @@ function Workspace({
         <div className="topbar-meta">
           {!online && <span className="badge offline">offline</span>}
           {syncing && <span className="badge subtle">syncing…</span>}
-          {syncState?.error && syncState.error !== 'offline' && (
+          {syncState?.error && !BENIGN_SYNC_ERRORS.has(syncState.error) && (
             <span className="badge warn-badge">sync failed</span>
           )}
           <InstallButton />
@@ -244,7 +252,7 @@ function Workspace({
         </TabButton>
       </nav>
 
-      {syncState?.error && syncState.error !== 'offline' && (
+      {syncState?.error && !BENIGN_SYNC_ERRORS.has(syncState.error) && (
         <div className="sync-banner">
           <div>
             <strong>Sync didn't work.</strong>{' '}
