@@ -1,8 +1,8 @@
 -- lingua_v31_guard_is_admin
 --
--- RUN THIS. It closes a privilege-escalation hole opened by the previous
--- migration. Applying it from here was refused twice, so it needs running by
--- hand in the Supabase SQL editor.
+-- APPLIED 2026-10-10. Kept here as the record of what was run and why.
+--
+-- It closed a privilege-escalation hole opened by the previous migration.
 --
 -- The hole: the RLS policy on user_settings is a single ALL policy on
 -- `auth.uid() = user_id`. That is right for every other column and wrong for
@@ -21,9 +21,13 @@
 -- PostgREST runs as `authenticated` or `anon`; the SQL editor runs as the
 -- owner, which is how the flag is meant to be set.
 
+-- search_path is pinned to pg_catalog. Low risk either way — the body touches
+-- no tables and calls nothing but built-ins — but the advisor flags an unset
+-- one, and an advisor you have taught yourself to ignore is useless.
 create or replace function public.guard_is_admin()
 returns trigger
 language plpgsql
+set search_path = pg_catalog
 as $$
 begin
   if current_user not in ('authenticated', 'anon') then
