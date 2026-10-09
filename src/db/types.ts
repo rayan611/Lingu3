@@ -335,6 +335,11 @@ export const ExpansionSchema = z.object({
 })
 export type Expansion = z.infer<typeof ExpansionSchema>
 
+/** One previewed entry, with its morphology already validated for display. */
+export type WordPreviewEntryView = z.infer<typeof ExpansionEntrySchema> & {
+  form: Morphology['form'] | undefined
+}
+
 /**
  * Validates the morphology blob against the schema for its own language.
  * Returns undefined rather than throwing: a wrong gender field should cost us

@@ -243,14 +243,20 @@ export async function addWord(opts: {
   await db.concepts.add(concept)
 
   try {
-    const expansion = await fetchExpansion({
-      lemma,
-      sourceLang: opts.sourceLang,
-      nativeLang: settings.nativeLang,
-      langs: [settings.nativeLang, ...settings.targetLangs],
-      hint: opts.hint,
-    })
+    // If this word was just previewed, the answer is already in hand. Paying
+    // for it twice is the exact thing the cache exists to stop.
+    const cached = previewCache.get(previewKey(lemma, opts.sourceLang, opts.hint))
+    const expansion =
+      cached ??
+      (await fetchExpansion({
+        lemma,
+        sourceLang: opts.sourceLang,
+        nativeLang: settings.nativeLang,
+        langs: [settings.nativeLang, ...settings.targetLangs],
+        hint: opts.hint,
+      }))
     await applyExpansion(concept.id, expansion, settings)
+    previewCache.delete(previewKey(lemma, opts.sourceLang, opts.hint))
     return { conceptId: concept.id, status: 'expanded' }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -263,6 +269,138 @@ export async function addWord(opts: {
     })
     return { conceptId: concept.id, status: 'queued', message }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Preview before saving
+//
+// Two buttons, one code path. "Check" expands the word and shows it without
+// writing anything; "Add" commits what is already on screen. Quick add is the
+// same flow with the confirmation skipped, not a second implementation of it.
+// ---------------------------------------------------------------------------
+
+export interface WordPreview {
+  lemma: string
+  sourceLang: Lang
+  hint?: string
+  expansion: Expansion
+}
+
+export type PreviewResult =
+  | { status: 'duplicate'; conceptId: string; lemma: string }
+  | { status: 'preview'; preview: WordPreview }
+
+/**
+ * Previewed expansions, so Check → Add costs one model call rather than two.
+ * The endpoint allows 80 an hour; checking a word, changing your mind, and
+ * checking it again should not eat three of them.
+ *
+ * In memory only, and deliberately: a preview is a few seconds of thinking,
+ * not something worth surviving a reload, and a stale cached expansion is
+ * worse than paying for a fresh one.
+ */
+const previewCache = new Map<string, Expansion>()
+const PREVIEW_CACHE_MAX = 50
+
+function previewKey(lemma: string, sourceLang: Lang, hint?: string): string {
+  return `${lemmaKey(lemma, sourceLang)}|${(hint ?? '').trim().toLocaleLowerCase()}`
+}
+
+/** For tests and for the "expand again" button — forces the next call to be real. */
+export function clearPreviewCache(): void {
+  previewCache.clear()
+}
+
+export function cachedPreviewCount(): number {
+  return previewCache.size
+}
+
+/**
+ * Expands a word and shows it, writing nothing.
+ *
+ * The duplicate check runs first and before any network call, so typing a word
+ * you already have costs nothing and tells you where it already lives —
+ * including across languages, where "dog" finds the concept added as "hund".
+ */
+export async function previewWord(opts: {
+  lemma: string
+  sourceLang: Lang
+  hint?: string
+  settings: Settings
+  force?: boolean
+}): Promise<PreviewResult> {
+  const lemma = opts.lemma.trim()
+  if (!lemma) throw new Error('Enter a word first.')
+
+  const existing = await findExisting(lemma, opts.sourceLang)
+  if (existing) {
+    return { status: 'duplicate', conceptId: existing.id, lemma: existing.lemma }
+  }
+
+  const key = previewKey(lemma, opts.sourceLang, opts.hint)
+  if (opts.force) previewCache.delete(key)
+
+  let expansion = previewCache.get(key)
+  if (!expansion) {
+    expansion = await fetchExpansion({
+      lemma,
+      sourceLang: opts.sourceLang,
+      nativeLang: opts.settings.nativeLang,
+      langs: [opts.settings.nativeLang, ...opts.settings.targetLangs],
+      hint: opts.hint,
+    })
+    if (previewCache.size >= PREVIEW_CACHE_MAX) {
+      const oldest = previewCache.keys().next().value
+      if (oldest !== undefined) previewCache.delete(oldest)
+    }
+    previewCache.set(key, expansion)
+  }
+
+  return {
+    status: 'preview',
+    preview: { lemma, sourceLang: opts.sourceLang, hint: opts.hint, expansion },
+  }
+}
+
+/**
+ * Writes a preview the user has confirmed. No model call: the expansion is the
+ * object already on screen, which is the whole point of previewing.
+ */
+export async function commitPreview(opts: {
+  preview: WordPreview
+  category: Category
+  tags?: string[]
+  settings: Settings
+}): Promise<AddWordResult> {
+  const { preview } = opts
+
+  // Re-check: the word may have arrived from another device between the
+  // preview and the confirmation.
+  const existing = await findExisting(preview.lemma, preview.sourceLang)
+  if (existing) {
+    return {
+      conceptId: existing.id,
+      status: 'duplicate',
+      message: `"${existing.lemma}" is already in your list.`,
+    }
+  }
+
+  const now = Date.now()
+  const concept: Concept = {
+    id: newId(),
+    lemma: preview.lemma,
+    sourceLang: preview.sourceLang,
+    pos: preview.expansion.pos as PartOfSpeech,
+    category: opts.category,
+    tags: opts.tags?.length ? opts.tags : undefined,
+    notes: preview.hint,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.concepts.add(concept)
+  await applyExpansion(concept.id, preview.expansion, opts.settings)
+  previewCache.delete(previewKey(preview.lemma, preview.sourceLang, preview.hint))
+  return { conceptId: concept.id, status: 'expanded' }
 }
 
 export interface BulkLine {

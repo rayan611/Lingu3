@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { addWord, processPending } from '../ai/expand'
+import {
+  commitPreview,
+  previewWord,
+  processPending,
+  type WordPreview,
+} from '../ai/expand'
 import {
   CATEGORIES,
   LANG_NAMES,
@@ -11,6 +16,7 @@ import {
 } from '../db/types'
 import { WordCard } from './WordCard'
 import { BulkAdd } from './BulkAdd'
+import { PreviewCard } from './PreviewCard'
 
 interface Props {
   settings: Settings
@@ -24,6 +30,13 @@ export function AddWord({ settings }: Props) {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ kind: string; text: string } | null>(null)
   const [lastId, setLastId] = useState<string | null>(null)
+  const [preview, setPreview] = useState<WordPreview | null>(null)
+  /**
+   * Skip the confirmation step. The flow underneath is identical either way —
+   * expand, then write — so this is one branch at the end, not a second path
+   * through the code.
+   */
+  const [quick, setQuick] = useState(false)
 
   const pending = useLiveQuery(
     () => db.pending.orderBy('createdAt').toArray(),
@@ -45,29 +58,56 @@ export function AddWord({ settings }: Props) {
     if (!lemma.trim() || busy) return
     setBusy(true)
     setStatus(null)
+    setPreview(null)
     try {
-      const result = await addWord({
+      // Always expand first and look at it. The only difference quick mode
+      // makes is that it does not stop to ask.
+      const result = await previewWord({
         lemma,
         sourceLang,
-        category,
         hint: hint.trim() || undefined,
         settings,
       })
-      setLastId(result.conceptId)
-      if (result.status === 'expanded') {
-        setStatus({ kind: 'ok', text: `Added "${lemma.trim()}".` })
-        setLemma('')
-        setHint('')
-      } else if (result.status === 'duplicate') {
-        setStatus({ kind: 'warn', text: result.message ?? 'Already saved.' })
-      } else {
+
+      if (result.status === 'duplicate') {
+        setLastId(result.conceptId)
         setStatus({
           kind: 'warn',
-          text: `Saved, but not expanded yet (${result.message}). It will fill in when you are back online.`,
+          text: `"${result.lemma}" is already in your list — nothing was added, and no model call was spent.`,
         })
+        return
+      }
+
+      if (quick) {
+        await save(result.preview)
+      } else {
+        setPreview(result.preview)
+      }
+    } catch (err) {
+      setStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Writes a preview. No model call — the expansion is already on screen. */
+  async function save(toSave: WordPreview) {
+    setBusy(true)
+    try {
+      const result = await commitPreview({
+        preview: toSave,
+        category,
+        settings,
+      })
+      setLastId(result.conceptId)
+      if (result.status === 'duplicate') {
+        setStatus({ kind: 'warn', text: result.message ?? 'Already saved.' })
+      } else {
+        setStatus({ kind: 'ok', text: `Added "${toSave.lemma}".` })
         setLemma('')
         setHint('')
       }
+      setPreview(null)
     } catch (err) {
       setStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {
@@ -91,7 +131,8 @@ export function AddWord({ settings }: Props) {
         <h2>Add a word</h2>
         <p className="muted small">
           One entry becomes {settings.targetLangs.length} languages, with genders
-          and verb forms.
+          and verb forms. Check shows you the result; nothing is saved until you
+          press Add.
         </p>
 
         <input
@@ -146,8 +187,19 @@ export function AddWord({ settings }: Props) {
         </label>
 
         <button className="primary" type="submit" disabled={busy || !lemma.trim()}>
-          {busy ? 'Expanding…' : 'Add'}
+          {busy ? 'Expanding…' : quick ? 'Add' : 'Check'}
         </button>
+
+        <label className="checkline">
+          <input
+            type="checkbox"
+            checked={quick}
+            onChange={(e) => setQuick(e.target.checked)}
+          />
+          <span>
+            Quick add — save straight away, without showing it first
+          </span>
+        </label>
 
         {status && <div className={`status ${status.kind}`}>{status.text}</div>}
       </form>
@@ -177,6 +229,15 @@ export function AddWord({ settings }: Props) {
             )}
           </div>
         </div>
+      )}
+
+      {preview && (
+        <PreviewCard
+          preview={preview}
+          settings={settings}
+          busy={busy}
+          onAdd={() => void save(preview)}
+        />
       )}
 
       <BulkAdd settings={settings} />

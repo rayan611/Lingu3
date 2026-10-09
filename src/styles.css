@@ -652,3 +652,20 @@ kbd {
   background: var(--accent, #3a6ea5);
   transition: width 0.2s ease;
 }
+
+
+/* --- Check before adding --------------------------------------------------- */
+.checkline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--muted, #6b7280);
+  margin-top: 0.6rem;
+  cursor: pointer;
+}
+.checkline input { margin-top: 0.15rem; }
+.preview-card {
+  border-style: dashed;
+}
+.preview-card .primary.big { margin-top: 1rem; width: 100%; }

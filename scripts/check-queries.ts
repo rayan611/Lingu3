@@ -213,6 +213,54 @@ async function main() {
     }
   })
 
+  console.log('\n9. Check before adding')
+  await check('a word you already have is caught before any model call', async () => {
+    const { previewWord, cachedPreviewCount, clearPreviewCache } = await import(
+      '../src/ai/expand'
+    )
+    clearPreviewCache()
+    const settings = await ensureSettings()
+    const res = await previewWord({
+      lemma: 'word-0',
+      sourceLang: 'fa',
+      settings,
+    })
+    if (res.status !== 'duplicate') {
+      throw new Error('expected the existing word to be recognised')
+    }
+    // The decisive part: it did not reach the network, so nothing was cached.
+    if (cachedPreviewCount() !== 0) throw new Error('a duplicate must cost nothing')
+  })
+  await check('committing a preview writes entries and cards, not a second call', async () => {
+    const { commitPreview } = await import('../src/ai/expand')
+    const settings = await ensureSettings()
+    const result = await commitPreview({
+      preview: {
+        lemma: 'previewed',
+        sourceLang: 'sv',
+        expansion: {
+          pos: 'noun',
+          entries: [
+            { lang: 'fa', headword: 'سگ', meaning: 'dog' },
+            { lang: 'sv', headword: 'en hund', meaning: 'dog' },
+            { lang: 'de', headword: 'der Hund', meaning: 'dog' },
+            { lang: 'en', headword: 'dog', meaning: 'dog' },
+          ],
+        },
+        
+      },
+      category: 'daily',
+      settings,
+    })
+    if (result.status !== 'expanded') throw new Error(`got ${result.status}`)
+    const entries = await db.entries.where('conceptId').equals(result.conceptId).count()
+    if (entries !== 4) throw new Error(`expected 4 entries, got ${entries}`)
+    const cards = await db.cards.where('conceptId').equals(result.conceptId).count()
+    if (cards !== 3) throw new Error(`expected 3 cards, got ${cards}`)
+    const concept = await db.concepts.get(result.conceptId)
+    if (concept?.pos !== 'noun') throw new Error('pos from the expansion was not kept')
+  })
+
   console.log(
     failures === 0
       ? '\nEvery UI query runs against the schema.\n'
