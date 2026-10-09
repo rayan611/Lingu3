@@ -57,3 +57,14 @@ comment on column public.user_settings.is_admin is
 -- Verify afterwards: this should return exactly one row, yours.
 --   select u.email, s.is_admin from public.user_settings s
 --   join auth.users u on u.id = s.user_id where s.is_admin;
+
+-- Keep both functions off the anonymous API surface.
+--
+-- The v31 migration did `revoke all ... from public`, which does not touch an
+-- explicit grant — and Supabase's default privileges grant EXECUTE on every
+-- new function in `public` to anon, authenticated and service_role. So
+-- /rest/v1/rpc/admin_stats was reachable without signing in. It refused
+-- (auth.uid() is null, so is_admin() is false), but a gate nobody can reach
+-- is better than a gate that holds.
+revoke execute on function public.is_admin() from anon;
+revoke execute on function public.admin_stats() from anon;
